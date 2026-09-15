@@ -417,10 +417,21 @@ enabled = true
 [functions.enviar-certificado]
 enabled = true
 verify_jwt = false
-import_map = "./functions/enviar-certificado/deno.json"
+entrypoint = "./functions/enviar-certificado/index.ts"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/enviar-certificado/index.ts"
+
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/enviar-certificado/*.html" ]
+# static_files = [ "./functions/prueba-orus/*.html" ]
+
+[functions.prueba-orus]
+enabled = true
+verify_jwt = false
+import_map = "./functions/prueba-orus/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/prueba-orus/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/prueba-orus/*.html" ]

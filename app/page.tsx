@@ -24,6 +24,7 @@ export default function Home() {
           numero_venta,
           fecha_compra,
           garantia_anios,
+          foto_url,
           clientes (
             nombre,
             correo,
@@ -49,6 +50,14 @@ export default function Home() {
     }
 
     setCertificado(data);
+  }
+
+  function obtenerUrlFoto(fotoUrl: string) {
+    const { data } = supabase.storage
+      .from("joyas")
+      .getPublicUrl(fotoUrl);
+
+    return data.publicUrl;
   }
 
   return (
@@ -197,6 +206,7 @@ export default function Home() {
                   padding: "35px",
                 }}
               >
+                {/* ENCABEZADO DEL CERTIFICADO */}
                 <div style={{ textAlign: "center" }}>
                   <img
                     src="/logo-casa-orus.png"
@@ -295,7 +305,10 @@ export default function Home() {
 
                   <Info
                     titulo="PIEDRA NATURAL"
-                    valor={certificado.ventas?.productos?.piedra || "No aplica"}
+                    valor={
+                      certificado.ventas?.productos?.piedra ||
+                      "No aplica"
+                    }
                   />
 
                   <Info
@@ -313,6 +326,58 @@ export default function Home() {
                     valor={`${certificado.ventas?.garantia_anios || 5} años`}
                   />
                 </div>
+
+                {/* FOTO DE LA JOYA */}
+                {certificado.ventas?.foto_url && (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      marginTop: "40px",
+                      paddingTop: "30px",
+                      borderTop: "1px solid #d8c58f",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: "10px",
+                        letterSpacing: "2px",
+                        color: "#9a8150",
+                        marginBottom: "15px",
+                      }}
+                    >
+                      PIEZA REGISTRADA
+                    </p>
+
+                    <img
+                      src={obtenerUrlFoto(
+                        certificado.ventas.foto_url
+                      )}
+                      alt="Joya registrada"
+                      style={{
+                        width: "280px",
+                        maxWidth: "100%",
+                        maxHeight: "320px",
+                        objectFit: "contain",
+                        borderRadius: "10px",
+                        border: "1px solid #d8c58f",
+                        padding: "8px",
+                        background: "#ffffff",
+                        display: "block",
+                        margin: "0 auto",
+                      }}
+                    />
+
+                    <p
+                      style={{
+                        fontSize: "10px",
+                        color: "#888",
+                        marginTop: "10px",
+                      }}
+                    >
+                      Fotografía registrada al momento de la compra
+                    </p>
+                  </div>
+                )}
 
                 {/* CÓDIGO */}
                 <div

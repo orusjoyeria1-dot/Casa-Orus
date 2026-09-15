@@ -5,265 +5,446 @@ import { supabase } from "../lib/supabase";
 
 export default function AdminPage() {
   const [cliente, setCliente] = useState("");
-  const [correo, setCorreo] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [producto, setProducto] = useState("");
   const [referencia, setReferencia] = useState("");
-  const [numeroVenta, setNumeroVenta] = useState("");
   const [piedra, setPiedra] = useState("");
+
+  const [foto, setFoto] = useState<File | null>(null);
+  const [vistaPrevia, setVistaPrevia] = useState("");
+
   const [mensaje, setMensaje] = useState("");
 
-  async function crearCertificado(e: React.FormEvent) {
+  function seleccionarFoto(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const archivo = e.target.files?.[0];
+
+    if (!archivo) return;
+
+    if (!archivo.type.startsWith("image/")) {
+      setMensaje("⚠️ Selecciona una imagen válida.");
+      return;
+    }
+
+    setFoto(archivo);
+    setVistaPrevia(URL.createObjectURL(archivo));
+    setMensaje("");
+  }
+
+  async function crearCertificado(
+    e: React.FormEvent
+  ) {
     e.preventDefault();
-    setMensaje("Creando certificado...");
 
-    // 1. Crear cliente
-    const { data: nuevoCliente, error: errorCliente } = await supabase
-      .from("clientes")
-      .insert({
-        nombre: cliente,
-        correo: correo,
-      })
-      .select()
-      .single();
-
-    if (errorCliente) {
-      setMensaje("Error creando el cliente: " + errorCliente.message);
-      return;
-    }
-
-    // 2. Crear producto
-    const { data: nuevoProducto, error: errorProducto } = await supabase
-      .from("productos")
-      .insert({
-        referencia: referencia,
-        nombre: producto,
-        material: "Oro laminado",
-        piedra: piedra,
-      })
-      .select()
-      .single();
-
-    if (errorProducto) {
-      setMensaje("Error creando el producto: " + errorProducto.message);
-      return;
-    }
-
-    // 3. Crear venta
-    const { data: nuevaVenta, error: errorVenta } = await supabase
-      .from("ventas")
-      .insert({
-        cliente_id: nuevoCliente.id,
-        producto_id: nuevoProducto.id,
-        numero_venta: numeroVenta,
-        garantia_anios: 5,
-      })
-      .select()
-      .single();
-
-    if (errorVenta) {
-      setMensaje("Error creando la venta: " + errorVenta.message);
-      return;
-    }
-
-    // 4. Crear código automático
-    const codigo = `ORUS-${new Date().getFullYear()}-${String(
-      Date.now()
-    ).slice(-6)}`;
-
-    // 5. Crear certificado
-    const { data: nuevoCertificado, error: errorCertificado } =
-      await supabase
-        .from("certificados")
-        .insert({
-          venta_id: nuevaVenta.id,
-          codigo: codigo,
-          estado: "ACTIVO",
-        })
-        .select()
-        .single();
-
-    if (errorCertificado) {
+    if (!cliente || !telefono || !producto || !referencia) {
       setMensaje(
-        "Error creando el certificado: " + errorCertificado.message
+        "⚠️ Completa nombre, teléfono, producto y referencia."
       );
       return;
     }
 
-    // 6. Enviar correo automáticamente
-    setMensaje("Certificado creado. Enviando correo...");
+    if (!foto) {
+      setMensaje(
+        "⚠️ Debes tomar o seleccionar una foto de la joya."
+      );
+      return;
+    }
 
-    const { error: errorCorreo } = await supabase.functions.invoke(
+    setMensaje("Creando certificado...");
+
+    // =====================================================
+    // CREAR CLIENTE
+    // =====================================================
+
+    const { data: nuevoCliente, error: errorCliente } =
+      await supabase
+        .from("clientes")
+        .insert({
+          nombre: cliente,
+          telefono: telefono,
+        })
+        .select()
+        .single();
+
+    if (errorCliente) {
+      setMensaje(
+        "Error creando el cliente: " +
+          errorCliente.message
+      );
+      return;
+    }
+
+    // =====================================================
+    // CREAR PRODUCTO
+    // =====================================================
+
+    const { data: nuevoProducto, error: errorProducto } =
+      await supabase
+        .from("productos")
+        .insert({
+          referencia: referencia,
+          nombre: producto,
+          material: "Oro laminado",
+          piedra: piedra,
+        })
+        .select()
+        .single();
+
+    if (errorProducto) {
+      setMensaje(
+        "Error creando el producto: " +
+          errorProducto.message
+      );
+      return;
+    }
+
+    // =====================================================
+    // CREAR VENTA
+    // =====================================================
+
+    const { data: nuevaVenta, error: errorVenta } =
+      await supabase
+        .from("ventas")
+        .insert({
+          cliente_id: nuevoCliente.id,
+          producto_id: nuevoProducto.id,
+          garantia_anios: 5,
+        })
+        .select()
+        .single();
+
+    if (errorVenta) {
+      setMensaje(
+        "Error creando la venta: " +
+          errorVenta.message
+      );
+      return;
+    }
+
+    // =====================================================
+    // SUBIR FOTO
+    // =====================================================
+
+    const extension =
+      foto.name.split(".").pop()?.toLowerCase() ||
+      "jpg";
+
+    const nombreArchivo =
+      `ventas/${nuevaVenta.id}.${extension}`;
+
+    const { error: errorFoto } =
+      await supabase.storage
+        .from("joyas")
+        .upload(nombreArchivo, foto, {
+          upsert: true,
+          contentType: foto.type,
+        });
+
+    if (errorFoto) {
+      setMensaje(
+        "Error subiendo la foto: " +
+          errorFoto.message
+      );
+      return;
+    }
+
+    // =====================================================
+    // GUARDAR FOTO EN LA VENTA
+    // =====================================================
+
+    const {
+      error: errorActualizarVenta,
+    } = await supabase
+      .from("ventas")
+      .update({
+        foto_url: nombreArchivo,
+      })
+      .eq("id", nuevaVenta.id);
+
+    if (errorActualizarVenta) {
+      setMensaje(
+        "Error guardando la foto: " +
+          errorActualizarVenta.message
+      );
+      return;
+    }
+
+    // =====================================================
+    // CREAR CÓDIGO DE CERTIFICADO
+    // =====================================================
+
+    const codigo =
+      `ORUS-${new Date().getFullYear()}-${String(
+        Date.now()
+      ).slice(-6)}`;
+
+    const {
+      error: errorCertificado,
+    } = await supabase
+      .from("certificados")
+      .insert({
+        venta_id: nuevaVenta.id,
+        codigo: codigo,
+        estado: "ACTIVO",
+      })
+      .select()
+      .single();
+
+    if (errorCertificado) {
+      setMensaje(
+        "Error creando el certificado: " +
+          errorCertificado.message
+      );
+      return;
+    }
+
+    // =====================================================
+    // GENERAR PDF + ENVIAR WHATSAPP
+    // =====================================================
+
+    setMensaje(
+      "Generando certificado y enviándolo por WhatsApp..."
+    );
+
+    const {
+      data: resultadoFuncion,
+      error: errorFuncion,
+    } = await supabase.functions.invoke(
       "enviar-certificado",
       {
         body: {
-          correo: correo,
           nombre: cliente,
+          telefono: telefono,
           codigo: codigo,
         },
       }
     );
 
-    if (errorCorreo) {
-      console.error("Error enviando correo:", errorCorreo);
+    if (errorFuncion) {
+      console.error(
+        "Error enviando WhatsApp:",
+        errorFuncion
+      );
 
       setMensaje(
-        `⚠️ Certificado creado: ${codigo}, pero no se pudo enviar el correo.`
+        `⚠️ Certificado creado: ${codigo}, pero hubo un error enviando WhatsApp.`
       );
 
       return;
     }
 
-    setMensaje(
-      `✅ Certificado creado y enviado al correo del cliente: ${codigo}`
+    console.log(
+      "Resultado WhatsApp:",
+      resultadoFuncion
     );
 
-    // Limpiar formulario
+    setMensaje(
+      `✅ Certificado creado: ${codigo} | Venta: ${nuevaVenta.numero_venta} | WhatsApp enviado`
+    );
+
+    // =====================================================
+    // LIMPIAR FORMULARIO
+    // =====================================================
+
     setCliente("");
-    setCorreo("");
+    setTelefono("");
     setProducto("");
     setReferencia("");
-    setNumeroVenta("");
     setPiedra("");
+    setFoto(null);
+    setVistaPrevia("");
   }
 
-  return (
-    <main className="min-h-screen bg-[#f8f5ef] px-6 py-10">
-      <div className="max-w-4xl mx-auto">
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "12px",
+    marginTop: "6px",
+    marginBottom: "14px",
+    borderRadius: "8px",
+    border: "1px solid #ddd",
+    fontSize: "14px",
+    boxSizing: "border-box",
+  };
 
-        <div className="mb-10">
-          <h1 className="text-3xl tracking-[0.2em] text-[#b08d3c] font-serif">
-            CASA ORUS
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f7f3eb",
+        padding: "40px 20px",
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "650px",
+          margin: "0 auto",
+          background: "white",
+          padding: "35px",
+          borderRadius: "16px",
+          boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <img
+            src="/logo-casa-orus.png"
+            alt="Casa Orus"
+            style={{
+              width: "150px",
+              marginBottom: "20px",
+            }}
+          />
+
+          <h1
+            style={{
+              color: "#9b762d",
+              marginBottom: "5px",
+            }}
+          >
+            Crear certificado
           </h1>
 
-          <p className="mt-2 text-gray-500">
-            Panel de administración
+          <p style={{ color: "#777" }}>
+            Registra la venta y envía el certificado
+            por WhatsApp.
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-[#e5d7b8] p-8">
+        <form onSubmit={crearCertificado}>
+          <label>Nombre del cliente</label>
 
-          <h2 className="text-2xl font-semibold text-gray-800">
-            Registrar nueva venta
-          </h2>
+          <input
+            value={cliente}
+            onChange={(e) =>
+              setCliente(e.target.value)
+            }
+            style={inputStyle}
+            placeholder="Nombre completo"
+          />
 
-          <p className="mt-2 text-sm text-gray-500">
-            Los datos se guardarán automáticamente en Supabase.
-          </p>
+          <label>Teléfono WhatsApp</label>
 
-          <form
-            onSubmit={crearCertificado}
-            className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-5"
+          <input
+            value={telefono}
+            onChange={(e) =>
+              setTelefono(e.target.value)
+            }
+            style={inputStyle}
+            placeholder="Ej: +573245192776"
+          />
+
+          <small
+            style={{
+              display: "block",
+              color: "#777",
+              marginTop: "-8px",
+              marginBottom: "15px",
+            }}
           >
+            Usa el formato internacional, por ejemplo:
+            +57 seguido del número.
+          </small>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Nombre del cliente
-              </label>
+          <label>Producto</label>
 
-              <input
-                value={cliente}
-                onChange={(e) => setCliente(e.target.value)}
-                placeholder="Nombre completo"
-                required
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#b08d3c]"
+          <input
+            value={producto}
+            onChange={(e) =>
+              setProducto(e.target.value)
+            }
+            style={inputStyle}
+            placeholder="Ej: Manilla amatista"
+          />
+
+          <label>Referencia</label>
+
+          <input
+            value={referencia}
+            onChange={(e) =>
+              setReferencia(e.target.value)
+            }
+            style={inputStyle}
+            placeholder="Ej: CO-001"
+          />
+
+          <label>Piedra natural</label>
+
+          <input
+            value={piedra}
+            onChange={(e) =>
+              setPiedra(e.target.value)
+            }
+            style={inputStyle}
+            placeholder="Ej: Amatista"
+          />
+
+          <label>Foto de la joya</label>
+
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={seleccionarFoto}
+            style={{
+              marginTop: "10px",
+              marginBottom: "15px",
+            }}
+          />
+
+          {vistaPrevia && (
+            <div
+              style={{
+                textAlign: "center",
+                marginBottom: "20px",
+              }}
+            >
+              <img
+                src={vistaPrevia}
+                alt="Vista previa"
+                style={{
+                  width: "220px",
+                  maxHeight: "220px",
+                  objectFit: "contain",
+                  borderRadius: "10px",
+                  border: "2px solid #c49a45",
+                }}
               />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Correo electrónico
-              </label>
-
-              <input
-                type="email"
-                value={correo}
-                onChange={(e) => setCorreo(e.target.value)}
-                placeholder="cliente@email.com"
-                required
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#b08d3c]"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Producto
-              </label>
-
-              <input
-                value={producto}
-                onChange={(e) => setProducto(e.target.value)}
-                placeholder="Ej: Manilla de amatista"
-                required
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#b08d3c]"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Referencia
-              </label>
-
-              <input
-                value={referencia}
-                onChange={(e) => setReferencia(e.target.value)}
-                placeholder="Ej: MAN-001"
-                required
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#b08d3c]"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Piedra natural
-              </label>
-
-              <input
-                value={piedra}
-                onChange={(e) => setPiedra(e.target.value)}
-                placeholder="Ej: Amatista"
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#b08d3c]"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Número de venta
-              </label>
-
-              <input
-                value={numeroVenta}
-                onChange={(e) => setNumeroVenta(e.target.value)}
-                placeholder="Ej: VENTA-0002"
-                required
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#b08d3c]"
-              />
-            </div>
-
-            <div className="md:col-span-2 pt-4">
-
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-[#b08d3c] py-3 text-white font-medium hover:opacity-90 transition"
-              >
-                Crear certificado
-              </button>
-
-            </div>
-
-          </form>
-
-          {mensaje && (
-            <div className="mt-6 rounded-xl bg-[#faf8f3] border border-[#e5d7b8] p-4 text-center">
-              {mensaje}
             </div>
           )}
 
-        </div>
+          <button
+            type="submit"
+            style={{
+              width: "100%",
+              padding: "15px",
+              border: "none",
+              borderRadius: "9px",
+              background: "#b38a3d",
+              color: "white",
+              fontSize: "16px",
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+          >
+            Crear certificado y enviar por WhatsApp
+          </button>
+        </form>
 
-        <p className="text-center mt-8 text-xs text-gray-400">
-          Casa Orus · Panel de administración
-        </p>
-
+        {mensaje && (
+          <div
+            style={{
+              marginTop: "20px",
+              padding: "15px",
+              borderRadius: "8px",
+              background: "#f5f5f5",
+              textAlign: "center",
+              color: "#444",
+            }}
+          >
+            {mensaje}
+          </div>
+        )}
       </div>
     </main>
   );
