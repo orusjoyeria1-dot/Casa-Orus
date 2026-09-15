@@ -25,10 +25,11 @@ export default function LoginPage() {
 
     setCargando(false);
 
-    if (error) {
-      setError("Correo o contraseña incorrectos.");
-      return;
-    }
+   if (error) {
+  console.error("ERROR SUPABASE LOGIN:", error);
+  setError(error.message);
+  return;
+}
 
     router.push("/admin");
   }
