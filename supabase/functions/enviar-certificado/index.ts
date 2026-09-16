@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js";
+
 import {
   PDFDocument,
   StandardFonts,
@@ -7,14 +8,30 @@ import {
 } from "npm:pdf-lib";
 
 // ============================================================
-// CONFIGURACIÓN
+// CASA ORUS
+// CERTIFICADO PREMIUM V2
+// WhatsApp Cloud API + Plantilla garantias_orus
 // ============================================================
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// ============================================================
+// VARIABLES DE ENTORNO
+// ============================================================
 
-const whatsappToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
-const whatsappPhoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
+const supabaseUrl =
+  Deno.env.get("SUPABASE_URL")!;
+
+const serviceRoleKey =
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const whatsappToken =
+  Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
+
+const whatsappPhoneNumberId =
+  Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
+
+// ============================================================
+// CLIENTE SUPABASE
+// ============================================================
 
 const supabase = createClient(
   supabaseUrl,
@@ -29,15 +46,19 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods":
+    "POST, OPTIONS",
 };
 
 // ============================================================
 // UTILIDADES
 // ============================================================
 
-function normalizarTelefono(telefono: string) {
-  let numero = telefono.replace(/\D/g, "");
+function normalizarTelefono(
+  telefono: string
+) {
+  let numero =
+    telefono.replace(/\D/g, "");
 
   if (numero.startsWith("00")) {
     numero = numero.substring(2);
@@ -47,25 +68,39 @@ function normalizarTelefono(telefono: string) {
     return numero;
   }
 
-  if (numero.startsWith("3") && numero.length === 10) {
+  if (
+    numero.startsWith("3") &&
+    numero.length === 10
+  ) {
     return `57${numero}`;
   }
 
   return numero;
 }
 
+// ------------------------------------------------------------
+
 function ajustarTexto(
   texto: string,
   maxCaracteres: number
 ) {
-  if (!texto) return "";
+  if (!texto) {
+    return "";
+  }
 
   if (texto.length <= maxCaracteres) {
     return texto;
   }
 
-  return texto.substring(0, maxCaracteres - 3) + "...";
+  return (
+    texto.substring(
+      0,
+      maxCaracteres - 3
+    ) + "..."
+  );
 }
+
+// ------------------------------------------------------------
 
 function dibujarTextoCentrado(
   page: any,
@@ -76,10 +111,16 @@ function dibujarTextoCentrado(
   color: any,
   anchoPagina = 595
 ) {
-  const ancho = font.widthOfTextAtSize(texto, size);
+  const anchoTexto =
+    font.widthOfTextAtSize(
+      texto,
+      size
+    );
 
   page.drawText(texto, {
-    x: (anchoPagina - ancho) / 2,
+    x:
+      (anchoPagina - anchoTexto) /
+      2,
     y,
     size,
     font,
@@ -88,40 +129,51 @@ function dibujarTextoCentrado(
 }
 
 // ============================================================
-// CARGAR IMAGEN DESDE SUPABASE STORAGE
+// CARGAR ARCHIVO DESDE BUCKET PÚBLICO
 // ============================================================
 
 async function cargarImagen(
   bucket: string,
   ruta: string
 ) {
-  const rutaCodificada = ruta
-    .split("/")
-    .map((parte) => encodeURIComponent(parte))
-    .join("/");
+  const partesRuta =
+    ruta
+      .split("/")
+      .map((parte) =>
+        encodeURIComponent(parte)
+      )
+      .join("/");
 
   const url =
-    `${supabaseUrl}/storage/v1/object/public/${bucket}/${rutaCodificada}`;
+    `${supabaseUrl}/storage/v1/object/public/${bucket}/${partesRuta}`;
 
-  console.log("Cargando imagen:", url);
+  console.log(
+    "🖼️ Cargando:",
+    url
+  );
 
-  const response = await fetch(url);
+  const response =
+    await fetch(url);
 
   if (!response.ok) {
     console.error(
-      `No se pudo cargar imagen ${bucket}/${ruta}:`,
-      response.status
+      `❌ No se pudo cargar ${bucket}/${ruta}`,
+      response.status,
+      response.statusText
     );
 
     return null;
   }
 
-  const bytes = new Uint8Array(
-    await response.arrayBuffer()
-  );
+  const bytes =
+    new Uint8Array(
+      await response.arrayBuffer()
+    );
 
   const contentType =
-    response.headers.get("content-type") || "";
+    response.headers.get(
+      "content-type"
+    ) || "";
 
   return {
     bytes,
@@ -130,10 +182,14 @@ async function cargarImagen(
 }
 
 // ============================================================
-// FUNCIÓN PRINCIPAL
+// SERVIDOR
 // ============================================================
 
 Deno.serve(async (req) => {
+  // ==========================================================
+  // OPTIONS / CORS
+  // ==========================================================
+
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       headers: corsHeaders,
@@ -141,17 +197,39 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log("====================================");
-    console.log("🚀 CASA ORUS - CERTIFICADO PREMIUM V2");
-    console.log("====================================");
+    console.log(
+      "=========================================="
+    );
 
-    const body = await req.json();
+    console.log(
+      "🚀 CASA ORUS - CERTIFICADO PREMIUM V2"
+    );
 
-    const nombre = body.nombre;
-    const telefono = body.telefono;
-    const codigo = body.codigo;
+    console.log(
+      "=========================================="
+    );
 
-    if (!nombre || !telefono || !codigo) {
+    // ========================================================
+    // DATOS RECIBIDOS
+    // ========================================================
+
+    const body =
+      await req.json();
+
+    const nombre =
+      body.nombre;
+
+    const telefono =
+      body.telefono;
+
+    const codigo =
+      body.codigo;
+
+    if (
+      !nombre ||
+      !telefono ||
+      !codigo
+    ) {
       return new Response(
         JSON.stringify({
           error:
@@ -161,21 +239,36 @@ Deno.serve(async (req) => {
           status: 400,
           headers: {
             ...corsHeaders,
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
         }
       );
     }
 
-    console.log("Cliente:", nombre);
-    console.log("Teléfono:", telefono);
-    console.log("Código:", codigo);
+    console.log(
+      "👤 Cliente:",
+      nombre
+    );
+
+    console.log(
+      "📱 Teléfono:",
+      telefono
+    );
+
+    console.log(
+      "🔐 Código:",
+      codigo
+    );
 
     // ========================================================
     // BUSCAR CERTIFICADO
     // ========================================================
 
-    const { data: certificado, error: errorCertificado } =
+    const {
+      data: certificado,
+      error: errorCertificado,
+    } =
       await supabase
         .from("certificados")
         .select(`
@@ -202,30 +295,39 @@ Deno.serve(async (req) => {
             )
           )
         `)
-        .eq("codigo", codigo)
+        .eq(
+          "codigo",
+          codigo
+        )
         .single();
 
-    if (errorCertificado || !certificado) {
+    if (
+      errorCertificado ||
+      !certificado
+    ) {
       console.error(
-        "Error buscando certificado:",
+        "❌ Error buscando certificado:",
         errorCertificado
       );
 
       return new Response(
         JSON.stringify({
-          error: "No se encontró el certificado.",
+          error:
+            "No se encontró el certificado.",
         }),
         {
           status: 404,
           headers: {
             ...corsHeaders,
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
         }
       );
     }
 
-    const venta = certificado.ventas;
+    const venta =
+      certificado.ventas;
 
     if (!venta) {
       throw new Error(
@@ -233,88 +335,130 @@ Deno.serve(async (req) => {
       );
     }
 
-    const cliente = venta.clientes;
-    const producto = venta.productos;
+    const cliente =
+      venta.clientes;
+
+    const producto =
+      venta.productos;
 
     // ========================================================
     // CREAR PDF
     // ========================================================
 
-    console.log("📄 Creando PDF PREMIUM V2...");
+    console.log(
+      "📄 Generando PDF PREMIUM V2..."
+    );
 
-    const pdfDoc = await PDFDocument.create();
+    const pdfDoc =
+      await PDFDocument.create();
 
     const fontRegular =
-      await pdfDoc.embedFont(StandardFonts.Helvetica);
+      await pdfDoc.embedFont(
+        StandardFonts.Helvetica
+      );
 
     const fontBold =
-      await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    // Colores Casa Orus
-    const marfil = rgb(
-      0.97,
-      0.95,
-      0.91
-    );
-
-    const dorado = rgb(
-      0.72,
-      0.54,
-      0.22
-    );
-
-    const doradoClaro = rgb(
-      0.84,
-      0.70,
-      0.42
-    );
-
-    const negro = rgb(
-      0.12,
-      0.11,
-      0.10
-    );
-
-    const gris = rgb(
-      0.38,
-      0.37,
-      0.34
-    );
-
-    const blanco = rgb(
-      1,
-      1,
-      1
-    );
-
-    const ancho = 595;
-    const alto = 842;
+      await pdfDoc.embedFont(
+        StandardFonts.HelveticaBold
+      );
 
     // ========================================================
-    // CARGAR LOGO DESDE BUCKET "logos"
+    // COLORES
     // ========================================================
 
-    let logoBytes: Uint8Array | null = null;
-    let logoContentType = "";
+    const marfil =
+      rgb(
+        0.97,
+        0.95,
+        0.91
+      );
 
-    const logo = await cargarImagen(
-      "logos",
-      "logo-casa-orus.png"
-    );
+    const dorado =
+      rgb(
+        0.72,
+        0.54,
+        0.22
+      );
+
+    const doradoClaro =
+      rgb(
+        0.84,
+        0.70,
+        0.42
+      );
+
+    const negro =
+      rgb(
+        0.12,
+        0.11,
+        0.10
+      );
+
+    const gris =
+      rgb(
+        0.38,
+        0.37,
+        0.34
+      );
+
+    const blanco =
+      rgb(
+        1,
+        1,
+        1
+      );
+
+    const ancho =
+      595;
+
+    const alto =
+      842;
+
+    // ========================================================
+    // CARGAR LOGO
+    //
+    // Bucket:
+    // logos
+    //
+    // Archivo:
+    // logo-casa-orus.png
+    // ========================================================
+
+    let logoBytes:
+      Uint8Array | null = null;
+
+    let logoContentType =
+      "";
+
+    const logo =
+      await cargarImagen(
+        "logos",
+        "logo-casa-orus.png"
+      );
 
     if (logo) {
-      logoBytes = logo.bytes;
-      logoContentType = logo.contentType;
+      logoBytes =
+        logo.bytes;
+
+      logoContentType =
+        logo.contentType;
 
       console.log(
-        "✅ Logo cargado:",
-        logoContentType,
-        logoBytes.length,
-        "bytes"
+        "✅ Logo cargado correctamente"
+      );
+
+      console.log(
+        "Tipo:",
+        logoContentType
+      );
+
+      console.log(
+        "Bytes:",
+        logoBytes.length
       );
     } else {
       console.error(
-        "❌ No se pudo cargar el logo desde bucket logos."
+        "❌ NO se pudo cargar el logo."
       );
     }
 
@@ -323,11 +467,13 @@ Deno.serve(async (req) => {
     // CERTIFICADO
     // ========================================================
 
-    const page1 = pdfDoc.addPage([
-      ancho,
-      alto,
-    ]);
+    const page1 =
+      pdfDoc.addPage([
+        ancho,
+        alto,
+      ]);
 
+    // Fondo
     page1.drawRectangle({
       x: 0,
       y: 0,
@@ -346,12 +492,14 @@ Deno.serve(async (req) => {
       borderWidth: 2,
     });
 
+    // Marco interior
     page1.drawRectangle({
       x: 31,
       y: 31,
       width: ancho - 62,
       height: alto - 62,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.7,
     });
 
@@ -361,45 +509,76 @@ Deno.serve(async (req) => {
 
     if (logoBytes) {
       try {
-        let logoImage;
+        let logoImage: any =
+          null;
 
         if (
-          logoContentType.includes("png") ||
-          logoContentType === ""
+          logoContentType.includes(
+            "png"
+          )
         ) {
           logoImage =
-            await pdfDoc.embedPng(logoBytes);
+            await pdfDoc.embedPng(
+              logoBytes
+            );
         } else if (
-          logoContentType.includes("jpeg") ||
-          logoContentType.includes("jpg")
+          logoContentType.includes(
+            "jpeg"
+          ) ||
+          logoContentType.includes(
+            "jpg"
+          )
         ) {
           logoImage =
-            await pdfDoc.embedJpg(logoBytes);
+            await pdfDoc.embedJpg(
+              logoBytes
+            );
         }
 
         if (logoImage) {
-          const escalaMaxima = 145;
-
           const dimensiones =
             logoImage.scale(1);
 
-          const escala = Math.min(
-            escalaMaxima / dimensiones.width,
-            75 / dimensiones.height
-          );
+          const maxWidth =
+            175;
+
+          const maxHeight =
+            82;
+
+          const escala =
+            Math.min(
+              maxWidth /
+                dimensiones.width,
+              maxHeight /
+                dimensiones.height
+            );
 
           const logoWidth =
-            dimensiones.width * escala;
+            dimensiones.width *
+            escala;
 
           const logoHeight =
-            dimensiones.height * escala;
+            dimensiones.height *
+            escala;
 
-          page1.drawImage(logoImage, {
-            x: (ancho - logoWidth) / 2,
-            y: 708,
-            width: logoWidth,
-            height: logoHeight,
-          });
+          page1.drawImage(
+            logoImage,
+            {
+              x:
+                (ancho -
+                  logoWidth) /
+                2,
+
+              y:
+                700,
+
+              width:
+                logoWidth,
+
+              height:
+                logoHeight,
+            }
+          );
 
           console.log(
             "✅ Logo insertado en página 1"
@@ -414,13 +593,13 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================
-    // ENCABEZADO
+    // TÍTULO
     // ========================================================
 
     dibujarTextoCentrado(
       page1,
       "CERTIFICADO DE AUTENTICIDAD",
-      665,
+      655,
       fontBold,
       19,
       negro
@@ -429,7 +608,7 @@ Deno.serve(async (req) => {
     dibujarTextoCentrado(
       page1,
       "Y GARANTÍA",
-      638,
+      629,
       fontBold,
       19,
       dorado
@@ -438,24 +617,26 @@ Deno.serve(async (req) => {
     page1.drawLine({
       start: {
         x: 155,
-        y: 616,
+        y: 608,
       },
+
       end: {
         x: 440,
-        y: 616,
+        y: 608,
       },
+
       thickness: 1.2,
       color: dorado,
     });
 
     // ========================================================
-    // TEXTO INTRODUCTORIO
+    // INTRODUCCIÓN
     // ========================================================
 
     dibujarTextoCentrado(
       page1,
       "Casa Orus certifica que la pieza registrada",
-      582,
+      575,
       fontRegular,
       10.5,
       gris
@@ -464,30 +645,31 @@ Deno.serve(async (req) => {
     dibujarTextoCentrado(
       page1,
       "corresponde a una joya comercializada por nuestra marca.",
-      565,
+      558,
       fontRegular,
       10.5,
       gris
     );
 
     // ========================================================
-    // TARJETA CLIENTE
+    // CLIENTE
     // ========================================================
 
     page1.drawRectangle({
       x: 80,
-      y: 445,
+      y: 440,
       width: 435,
       height: 88,
       color: blanco,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.8,
     });
 
     dibujarTextoCentrado(
       page1,
       "CLIENTE",
-      510,
+      505,
       fontBold,
       8,
       dorado
@@ -496,55 +678,61 @@ Deno.serve(async (req) => {
     dibujarTextoCentrado(
       page1,
       ajustarTexto(
-        cliente?.nombre || nombre,
+        cliente?.nombre ||
+          nombre,
         45
       ),
-      480,
+      475,
       fontBold,
       16,
       negro
     );
 
     // ========================================================
-    // DATOS DE LA JOYA
+    // DETALLES DE LA PIEZA
     // ========================================================
 
     page1.drawRectangle({
       x: 80,
-      y: 290,
+      y: 285,
       width: 435,
       height: 130,
       color: blanco,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.8,
     });
 
     dibujarTextoCentrado(
       page1,
       "DETALLES DE LA PIEZA",
-      394,
+      389,
       fontBold,
       8,
       dorado
     );
 
-    // Producto
-    page1.drawText("Pieza", {
-      x: 105,
-      y: 362,
-      size: 9,
-      font: fontBold,
-      color: gris,
-    });
+    // Pieza
+    page1.drawText(
+      "Pieza",
+      {
+        x: 105,
+        y: 357,
+        size: 9,
+        font: fontBold,
+        color: gris,
+      }
+    );
 
     page1.drawText(
       ajustarTexto(
-        producto?.nombre || "Joyería Casa Orus",
-        32
+        producto?.nombre ||
+          "Joyería Casa Orus",
+        30
       ),
       {
         x: 205,
-        y: 362,
+        y: 357,
         size: 10,
         font: fontRegular,
         color: negro,
@@ -552,22 +740,26 @@ Deno.serve(async (req) => {
     );
 
     // Referencia
-    page1.drawText("Referencia", {
-      x: 105,
-      y: 335,
-      size: 9,
-      font: fontBold,
-      color: gris,
-    });
+    page1.drawText(
+      "Referencia",
+      {
+        x: 105,
+        y: 330,
+        size: 9,
+        font: fontBold,
+        color: gris,
+      }
+    );
 
     page1.drawText(
       ajustarTexto(
-        producto?.referencia || "N/A",
+        producto?.referencia ||
+          "N/A",
         30
       ),
       {
         x: 205,
-        y: 335,
+        y: 330,
         size: 10,
         font: fontRegular,
         color: negro,
@@ -575,22 +767,26 @@ Deno.serve(async (req) => {
     );
 
     // Material
-    page1.drawText("Material", {
-      x: 105,
-      y: 308,
-      size: 9,
-      font: fontBold,
-      color: gris,
-    });
+    page1.drawText(
+      "Material",
+      {
+        x: 105,
+        y: 303,
+        size: 9,
+        font: fontBold,
+        color: gris,
+      }
+    );
 
     page1.drawText(
       ajustarTexto(
-        producto?.material || "Oro laminado",
+        producto?.material ||
+          "Oro laminado",
         30
       ),
       {
         x: 205,
-        y: 308,
+        y: 303,
         size: 10,
         font: fontRegular,
         color: negro,
@@ -599,13 +795,16 @@ Deno.serve(async (req) => {
 
     // Piedra
     if (producto?.piedra) {
-      page1.drawText("Piedra", {
-        x: 350,
-        y: 362,
-        size: 9,
-        font: fontBold,
-        color: gris,
-      });
+      page1.drawText(
+        "Piedra",
+        {
+          x: 350,
+          y: 357,
+          size: 9,
+          font: fontBold,
+          color: gris,
+        }
+      );
 
       page1.drawText(
         ajustarTexto(
@@ -614,7 +813,7 @@ Deno.serve(async (req) => {
         ),
         {
           x: 400,
-          y: 362,
+          y: 357,
           size: 9,
           font: fontRegular,
           color: negro,
@@ -623,22 +822,26 @@ Deno.serve(async (req) => {
     }
 
     // Venta
-    page1.drawText("Venta", {
-      x: 350,
-      y: 335,
-      size: 9,
-      font: fontBold,
-      color: gris,
-    });
+    page1.drawText(
+      "Venta",
+      {
+        x: 350,
+        y: 330,
+        size: 9,
+        font: fontBold,
+        color: gris,
+      }
+    );
 
     page1.drawText(
       ajustarTexto(
-        venta.numero_venta || "N/A",
+        venta.numero_venta ||
+          "N/A",
         17
       ),
       {
         x: 400,
-        y: 335,
+        y: 330,
         size: 9,
         font: fontRegular,
         color: negro,
@@ -646,13 +849,16 @@ Deno.serve(async (req) => {
     );
 
     // Fecha
-    page1.drawText("Fecha", {
-      x: 350,
-      y: 308,
-      size: 9,
-      font: fontBold,
-      color: gris,
-    });
+    page1.drawText(
+      "Fecha",
+      {
+        x: 350,
+        y: 303,
+        size: 9,
+        font: fontBold,
+        color: gris,
+      }
+    );
 
     page1.drawText(
       String(
@@ -662,7 +868,7 @@ Deno.serve(async (req) => {
       ),
       {
         x: 400,
-        y: 308,
+        y: 303,
         size: 9,
         font: fontRegular,
         color: negro,
@@ -675,7 +881,7 @@ Deno.serve(async (req) => {
 
     page1.drawCircle({
       x: 297.5,
-      y: 208,
+      y: 205,
       size: 53,
       color: marfil,
       borderColor: dorado,
@@ -684,16 +890,17 @@ Deno.serve(async (req) => {
 
     page1.drawCircle({
       x: 297.5,
-      y: 208,
+      y: 205,
       size: 43,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.8,
     });
 
     dibujarTextoCentrado(
       page1,
       `${venta.garantia_anios || 5} AÑOS`,
-      215,
+      212,
       fontBold,
       12,
       dorado
@@ -702,7 +909,7 @@ Deno.serve(async (req) => {
     dibujarTextoCentrado(
       page1,
       "GARANTÍA",
-      198,
+      195,
       fontBold,
       8,
       negro
@@ -711,7 +918,7 @@ Deno.serve(async (req) => {
     dibujarTextoCentrado(
       page1,
       "CASA ORUS",
-      181,
+      178,
       fontBold,
       7,
       gris
@@ -721,15 +928,13 @@ Deno.serve(async (req) => {
     // CÓDIGO
     // ========================================================
 
-    page1.drawText(
+    dibujarTextoCentrado(
+      page1,
       "CÓDIGO DE CERTIFICADO",
-      {
-        x: 190,
-        y: 118,
-        size: 8,
-        font: fontBold,
-        color: dorado,
-      }
+      118,
+      fontBold,
+      8,
+      dorado
     );
 
     dibujarTextoCentrado(
@@ -742,7 +947,7 @@ Deno.serve(async (req) => {
     );
 
     // ========================================================
-    // FRASE FINAL
+    // FRASE
     // ========================================================
 
     dibujarTextoCentrado(
@@ -768,10 +973,11 @@ Deno.serve(async (req) => {
     // REGISTRO FOTOGRÁFICO
     // ========================================================
 
-    const page2 = pdfDoc.addPage([
-      ancho,
-      alto,
-    ]);
+    const page2 =
+      pdfDoc.addPage([
+        ancho,
+        alto,
+      ]);
 
     page2.drawRectangle({
       x: 0,
@@ -795,7 +1001,8 @@ Deno.serve(async (req) => {
       y: 31,
       width: ancho - 62,
       height: alto - 62,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.7,
     });
 
@@ -822,10 +1029,12 @@ Deno.serve(async (req) => {
         x: 150,
         y: 715,
       },
+
       end: {
         x: 445,
         y: 715,
       },
+
       thickness: 1,
       color: dorado,
     });
@@ -834,36 +1043,57 @@ Deno.serve(async (req) => {
     // CARGAR FOTO
     // ========================================================
 
-    let fotoBytes: Uint8Array | null = null;
-    let fotoContentType = "";
+    let fotoBytes:
+      Uint8Array | null = null;
+
+    let fotoContentType =
+      "";
 
     if (venta.foto_url) {
-      const foto = await cargarImagen(
-        "joyas",
-        venta.foto_url
-      );
+      const foto =
+        await cargarImagen(
+          "joyas",
+          venta.foto_url
+        );
 
       if (foto) {
-        fotoBytes = foto.bytes;
-        fotoContentType = foto.contentType;
+        fotoBytes =
+          foto.bytes;
+
+        fotoContentType =
+          foto.contentType;
 
         console.log(
-          "✅ Foto cargada:",
-          fotoContentType,
-          fotoBytes.length,
-          "bytes"
+          "✅ Foto cargada"
+        );
+
+        console.log(
+          "Tipo:",
+          fotoContentType
+        );
+
+        console.log(
+          "Bytes:",
+          fotoBytes.length
         );
       }
     }
 
     // ========================================================
-    // MARCO DE FOTO
+    // MARCO FOTO
     // ========================================================
 
-    const marcoX = 70;
-    const marcoY = 135;
-    const marcoW = 455;
-    const marcoH = 535;
+    const marcoX =
+      70;
+
+    const marcoY =
+      135;
+
+    const marcoW =
+      455;
+
+    const marcoH =
+      535;
 
     page2.drawRectangle({
       x: marcoX,
@@ -871,24 +1101,36 @@ Deno.serve(async (req) => {
       width: marcoW,
       height: marcoH,
       color: blanco,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 1.2,
     });
 
+    // ========================================================
+    // INSERTAR FOTO
+    // ========================================================
+
     if (fotoBytes) {
       try {
-        let fotoImagen;
+        let fotoImagen: any =
+          null;
 
         if (
-          fotoContentType.includes("png")
+          fotoContentType.includes(
+            "png"
+          )
         ) {
           fotoImagen =
             await pdfDoc.embedPng(
               fotoBytes
             );
         } else if (
-          fotoContentType.includes("jpeg") ||
-          fotoContentType.includes("jpg")
+          fotoContentType.includes(
+            "jpeg"
+          ) ||
+          fotoContentType.includes(
+            "jpg"
+          )
         ) {
           fotoImagen =
             await pdfDoc.embedJpg(
@@ -911,33 +1153,44 @@ Deno.serve(async (req) => {
           const altoOriginal =
             dimensiones.height;
 
-          // --------------------------------------------------
-          // Si la foto es horizontal, la giramos 90 grados
-          // para aprovechar mejor el formato vertical.
-          // --------------------------------------------------
+          // ==================================================
+          // FOTO HORIZONTAL
+          // ==================================================
 
           if (
-            anchoOriginal > altoOriginal * 1.15
+            anchoOriginal >
+            altoOriginal * 1.15
           ) {
-            const maxAncho = 400;
-            const maxAlto = 450;
+            const maxAncho =
+              400;
 
-            const escala = Math.min(
-              maxAncho / altoOriginal,
-              maxAlto / anchoOriginal
-            );
+            const maxAlto =
+              450;
+
+            const escala =
+              Math.min(
+                maxAncho /
+                  altoOriginal,
+
+                maxAlto /
+                  anchoOriginal
+              );
 
             const nuevoAncho =
-              altoOriginal * escala;
+              altoOriginal *
+              escala;
 
             const nuevoAlto =
-              anchoOriginal * escala;
+              anchoOriginal *
+              escala;
 
             const centroX =
-              marcoX + marcoW / 2;
+              marcoX +
+              marcoW / 2;
 
             const centroY =
-              marcoY + marcoH / 2;
+              marcoY +
+              marcoH / 2;
 
             page2.drawImage(
               fotoImagen,
@@ -945,48 +1198,75 @@ Deno.serve(async (req) => {
                 x:
                   centroX -
                   nuevoAncho / 2,
+
                 y:
                   centroY -
                   nuevoAlto / 2,
-                width: nuevoAncho,
-                height: nuevoAlto,
-                rotate: degrees(90),
+
+                width:
+                  nuevoAncho,
+
+                height:
+                  nuevoAlto,
+
+                rotate:
+                  degrees(90),
               }
             );
 
             console.log(
               "✅ Foto horizontal girada 90°"
             );
-          } else {
-            // ------------------------------------------------
-            // Foto vertical / cuadrada
-            // ------------------------------------------------
+          }
 
-            const maxAncho = 410;
-            const maxAlto = 485;
+          // ==================================================
+          // FOTO VERTICAL / CUADRADA
+          // ==================================================
 
-            const escala = Math.min(
-              maxAncho / anchoOriginal,
-              maxAlto / altoOriginal
-            );
+          else {
+            const maxAncho =
+              410;
+
+            const maxAlto =
+              485;
+
+            const escala =
+              Math.min(
+                maxAncho /
+                  anchoOriginal,
+
+                maxAlto /
+                  altoOriginal
+              );
 
             const nuevoAncho =
-              anchoOriginal * escala;
+              anchoOriginal *
+              escala;
 
             const nuevoAlto =
-              altoOriginal * escala;
+              altoOriginal *
+              escala;
 
             page2.drawImage(
               fotoImagen,
               {
                 x:
                   marcoX +
-                  (marcoW - nuevoAncho) / 2,
+                  (marcoW -
+                    nuevoAncho) /
+                    2,
+
                 y:
                   marcoY +
-                  (marcoH - nuevoAlto) / 2,
-                width: nuevoAncho,
-                height: nuevoAlto,
+                  (marcoH -
+                    nuevoAlto) /
+                    2,
+
+                width:
+                  nuevoAncho,
+
+                height:
+                  nuevoAlto,
               }
             );
 
@@ -1022,7 +1302,7 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================
-    // INFORMACIÓN ABAJO
+    // PIE PÁGINA 2
     // ========================================================
 
     dibujarTextoCentrado(
@@ -1057,10 +1337,11 @@ Deno.serve(async (req) => {
     // GARANTÍA Y CUIDADOS
     // ========================================================
 
-    const page3 = pdfDoc.addPage([
-      ancho,
-      alto,
-    ]);
+    const page3 =
+      pdfDoc.addPage([
+        ancho,
+        alto,
+      ]);
 
     page3.drawRectangle({
       x: 0,
@@ -1084,7 +1365,8 @@ Deno.serve(async (req) => {
       y: 31,
       width: ancho - 62,
       height: alto - 62,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.7,
     });
 
@@ -1111,10 +1393,12 @@ Deno.serve(async (req) => {
         x: 145,
         y: 716,
       },
+
       end: {
         x: 450,
         y: 716,
       },
+
       thickness: 1,
       color: dorado,
     });
@@ -1129,7 +1413,8 @@ Deno.serve(async (req) => {
       width: 465,
       height: 65,
       color: blanco,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.8,
     });
 
@@ -1167,7 +1452,7 @@ Deno.serve(async (req) => {
     );
 
     // ========================================================
-    // CUBRE
+    // QUÉ CUBRE
     // ========================================================
 
     page3.drawText(
@@ -1187,16 +1472,22 @@ Deno.serve(async (req) => {
       "• Revisión de la pieza cuando se presente una novedad.",
     ];
 
-    let y = 550;
+    let y =
+      550;
 
-    for (const texto of cubre) {
-      page3.drawText(texto, {
-        x: 82,
-        y,
-        size: 8.7,
-        font: fontRegular,
-        color: negro,
-      });
+    for (
+      const texto of cubre
+    ) {
+      page3.drawText(
+        texto,
+        {
+          x: 82,
+          y,
+          size: 8.7,
+          font: fontRegular,
+          color: negro,
+        }
+      );
 
       y -= 20;
     }
@@ -1224,16 +1515,22 @@ Deno.serve(async (req) => {
       "• Límpiala suavemente con un paño limpio y suave.",
     ];
 
-    y = 440;
+    y =
+      440;
 
-    for (const texto of cuidados) {
-      page3.drawText(texto, {
-        x: 82,
-        y,
-        size: 8.7,
-        font: fontRegular,
-        color: negro,
-      });
+    for (
+      const texto of cuidados
+    ) {
+      page3.drawText(
+        texto,
+        {
+          x: 82,
+          y,
+          size: 8.7,
+          font: fontRegular,
+          color: negro,
+        }
+      );
 
       y -= 20;
     }
@@ -1260,16 +1557,22 @@ Deno.serve(async (req) => {
       "• Pérdida de la pieza, piedras o dijes.",
     ];
 
-    y = 305;
+    y =
+      305;
 
-    for (const texto of noCubre) {
-      page3.drawText(texto, {
-        x: 82,
-        y,
-        size: 8.7,
-        font: fontRegular,
-        color: negro,
-      });
+    for (
+      const texto of noCubre
+    ) {
+      page3.drawText(
+        texto,
+        {
+          x: 82,
+          y,
+          size: 8.7,
+          font: fontRegular,
+          color: negro,
+        }
+      );
 
       y -= 20;
     }
@@ -1284,7 +1587,8 @@ Deno.serve(async (req) => {
       width: 465,
       height: 85,
       color: blanco,
-      borderColor: doradoClaro,
+      borderColor:
+        doradoClaro,
       borderWidth: 0.8,
     });
 
@@ -1333,7 +1637,7 @@ Deno.serve(async (req) => {
     );
 
     // ========================================================
-    // PIE
+    // PIE PÁGINA 3
     // ========================================================
 
     dibujarTextoCentrado(
@@ -1355,46 +1659,58 @@ Deno.serve(async (req) => {
     );
 
     // ========================================================
-    // GUARDAR PDF
+    // GENERAR BYTES DEL PDF
     // ========================================================
 
     const pdfBytes =
       await pdfDoc.save();
 
     console.log(
-      "✅ PDF PREMIUM V2 generado:",
+      "✅ PDF PREMIUM V2 GENERADO"
+    );
+
+    console.log(
+      "Tamaño:",
       pdfBytes.length,
       "bytes"
     );
 
     // ========================================================
-    // SUBIR PDF A SUPABASE STORAGE
+    // SUBIR PDF A SUPABASE
+    //
+    // IMPORTANTE:
+    // usamos -v2 para NO reutilizar el PDF anterior.
     // ========================================================
 
-    // IMPORTANTE:
-    // V2 evita reutilizar el archivo anterior.
     const nombrePdf =
       `certificados/${codigo}-v2.pdf`;
 
     console.log(
-      "📤 Subiendo:",
+      "📤 Subiendo PDF:",
       nombrePdf
     );
 
     const {
       error: errorUpload,
-    } = await supabase.storage
-      .from("certificados")
-      .upload(
-        nombrePdf,
-        pdfBytes,
-        {
-          contentType:
-            "application/pdf",
-          upsert: true,
-          cacheControl: "0",
-        }
-      );
+    } =
+      await supabase.storage
+        .from(
+          "certificados"
+        )
+        .upload(
+          nombrePdf,
+          pdfBytes,
+          {
+            contentType:
+              "application/pdf",
+
+            upsert:
+              true,
+
+            cacheControl:
+              "0",
+          }
+        );
 
     if (errorUpload) {
       console.error(
@@ -1413,67 +1729,192 @@ Deno.serve(async (req) => {
     );
 
     // ========================================================
-    // URL PÚBLICA
+    // URL PÚBLICA DEL PDF
     // ========================================================
 
     const pdfPublicUrl =
-      `${supabaseUrl}/storage/v1/object/public/certificados/${encodeURIComponent(
-        nombrePdf
-      )}`;
+      `${supabaseUrl}/storage/v1/object/public/certificados/${codigo}-v2.pdf`;
 
     console.log(
-      "🔗 URL PDF V2:",
+      "🔗 PDF:",
       pdfPublicUrl
     );
 
     // ========================================================
-    // ENVIAR POR WHATSAPP
+    // NORMALIZAR TELÉFONO
     // ========================================================
 
     const telefonoWhatsApp =
-      normalizarTelefono(telefono);
+      normalizarTelefono(
+        telefono
+      );
 
     console.log(
-      "📱 WhatsApp:",
+      "📱 Número WhatsApp:",
       telefonoWhatsApp
     );
+
+    // ========================================================
+    // WHATSAPP CLOUD API
+    // ========================================================
 
     const whatsappUrl =
       `https://graph.facebook.com/v23.0/${whatsappPhoneNumberId}/messages`;
 
+    // ========================================================
+    // PLANTILLA
+    //
+    // Nombre:
+    // garantias_orus
+    //
+    // Idioma:
+    // es_CO
+    //
+    // {{1}} = nombre
+    // {{2}} = código
+    //
+    // HEADER = PDF
+    // ========================================================
+
     const whatsappBody = {
-      messaging_product: "whatsapp",
-      to: telefonoWhatsApp,
-      type: "document",
-      document: {
-        link: pdfPublicUrl,
-        filename:
-          `Certificado-Casa-Orus-${codigo}-v2.pdf`,
-        caption:
-          `✨ Casa Orus\n\n` +
-          `Tu certificado de garantía está listo.\n` +
-          `Código: ${codigo}`,
+      messaging_product:
+        "whatsapp",
+
+      to:
+        telefonoWhatsApp,
+
+      type:
+        "template",
+
+      template: {
+        name:
+          "garantias_orus",
+
+        language: {
+          code:
+            "es_CO",
+        },
+
+        components: [
+          // ==================================================
+          // HEADER DEL DOCUMENTO
+          // ==================================================
+
+          {
+            type:
+              "header",
+
+            parameters: [
+              {
+                type:
+                  "document",
+
+                document: {
+                  link:
+                    pdfPublicUrl,
+
+                  filename:
+                    `Certificado-Casa-Orus-${codigo}-v2.pdf`,
+                },
+              },
+            ],
+          },
+
+          // ==================================================
+          // CUERPO
+          //
+          // {{1}} = nombre
+          // {{2}} = código
+          // ==================================================
+
+          {
+            type:
+              "body",
+
+            parameters: [
+              {
+                type:
+                  "text",
+
+                text:
+                  String(
+                    nombre
+                  ),
+              },
+
+              {
+                type:
+                  "text",
+
+                text:
+                  String(
+                    codigo
+                  ),
+              },
+            ],
+          },
+        ],
       },
     };
 
     console.log(
-      "📤 Enviando PDF V2 a WhatsApp..."
+      "=========================================="
     );
+
+    console.log(
+      "📤 ENVIANDO PLANTILLA WHATSAPP"
+    );
+
+    console.log(
+      "Plantilla: garantias_orus"
+    );
+
+    console.log(
+      "Idioma: es_CO"
+    );
+
+    console.log(
+      "Cliente:",
+      nombre
+    );
+
+    console.log(
+      "Código:",
+      codigo
+    );
+
+    console.log(
+      "PDF:",
+      pdfPublicUrl
+    );
+
+    console.log(
+      "=========================================="
+    );
+
+    // ========================================================
+    // ENVIAR A META
+    // ========================================================
 
     const whatsappResponse =
       await fetch(
         whatsappUrl,
         {
-          method: "POST",
+          method:
+            "POST",
+
           headers: {
             Authorization:
               `Bearer ${whatsappToken}`,
+
             "Content-Type":
               "application/json",
           },
-          body: JSON.stringify(
-            whatsappBody
-          ),
+
+          body:
+            JSON.stringify(
+              whatsappBody
+            ),
         }
       );
 
@@ -1481,68 +1922,119 @@ Deno.serve(async (req) => {
       await whatsappResponse.json();
 
     console.log(
-      "Respuesta WhatsApp:",
+      "📩 RESPUESTA WHATSAPP:"
+    );
+
+    console.log(
       JSON.stringify(
         whatsappResult
       )
     );
 
-    if (!whatsappResponse.ok) {
+    // ========================================================
+    // ERROR META
+    // ========================================================
+
+    if (
+      !whatsappResponse.ok
+    ) {
+      console.error(
+        "❌ META RECHAZÓ EL MENSAJE"
+      );
+
       throw new Error(
-        "WhatsApp rechazó el mensaje: " +
+        "WhatsApp rechazó la plantilla: " +
           JSON.stringify(
             whatsappResult
           )
       );
     }
 
+    // ========================================================
+    // ÉXITO
+    // ========================================================
+
     console.log(
-      "===================================="
+      "=========================================="
     );
 
     console.log(
-      "✅ CERTIFICADO PREMIUM V2 ENVIADO"
+      "✅ PLANTILLA ENVIADA A META"
     );
 
     console.log(
-      "===================================="
+      "✅ PDF PREMIUM V2 GENERADO"
+    );
+
+    console.log(
+      "=========================================="
     );
 
     return new Response(
       JSON.stringify({
-        success: true,
-        codigo,
-        pdf: pdfPublicUrl,
+        success:
+          true,
+
+        codigo:
+          codigo,
+
+        pdf:
+          pdfPublicUrl,
+
+        plantilla:
+          "garantias_orus",
+
         whatsapp:
           whatsappResult,
       }),
       {
-        status: 200,
+        status:
+          200,
+
         headers: {
           ...corsHeaders,
+
           "Content-Type":
             "application/json",
         },
       }
     );
+
   } catch (error) {
+
     console.error(
-      "❌ ERROR GENERAL:",
+      "=========================================="
+    );
+
+    console.error(
+      "❌ ERROR GENERAL"
+    );
+
+    console.error(
       error
+    );
+
+    console.error(
+      "=========================================="
     );
 
     return new Response(
       JSON.stringify({
-        success: false,
+        success:
+          false,
+
         error:
           error instanceof Error
             ? error.message
             : String(error),
       }),
       {
-        status: 500,
+        status:
+          500,
+
         headers: {
           ...corsHeaders,
+
           "Content-Type":
             "application/json",
         },
