@@ -1,13 +1,20 @@
 import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib";
 
+// ============================================================
+// CORS
+// ============================================================
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (req) => {
+// ============================================================
+// FUNCIÓN PRINCIPAL
+// ============================================================
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       headers: corsHeaders,
@@ -15,16 +22,20 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const {
-      nombre,
-      telefono,
-      codigo,
-    } = await req.json();
+    // ========================================================
+    // DATOS RECIBIDOS
+    // ========================================================
+
+    const body = await req.json();
+
+    const nombre = String(body.nombre || "").trim();
+    const telefono = String(body.telefono || "").trim();
+    const codigo = String(body.codigo || "").trim().toUpperCase();
 
     if (!nombre || !telefono || !codigo) {
       return new Response(
         JSON.stringify({
-          error: "Faltan datos: nombre, telefono o codigo.",
+          error: "Faltan nombre, teléfono o código.",
         }),
         {
           status: 400,
@@ -32,9 +43,13 @@ Deno.serve(async (req) => {
             ...corsHeaders,
             "Content-Type": "application/json",
           },
-        }
+        },
       );
     }
+
+    // ========================================================
+    // VARIABLES DE SUPABASE
+    // ========================================================
 
     const supabaseUrl =
       Deno.env.get("SUPABASE_URL") || "";
@@ -42,49 +57,56 @@ Deno.serve(async (req) => {
     const serviceRoleKey =
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
+    // ========================================================
+    // VARIABLES DE WHATSAPP
+    // ========================================================
+
     const whatsappToken =
       Deno.env.get("WHATSAPP_ACCESS_TOKEN") || "";
 
-    const phoneNumberId =
+    const whatsappPhoneNumberId =
       Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
 
-    if (
-      !supabaseUrl ||
-      !serviceRoleKey ||
-      !whatsappToken ||
-      !phoneNumberId
-    ) {
+    if (!supabaseUrl || !serviceRoleKey) {
       throw new Error(
-        "Faltan variables de entorno de Supabase o WhatsApp."
+        "Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.",
       );
     }
 
-    // ============================================================
-    // 1. BUSCAR CERTIFICADO
-    // ============================================================
+    if (!whatsappToken || !whatsappPhoneNumberId) {
+      throw new Error(
+        "Faltan las variables de WhatsApp.",
+      );
+    }
+
+    // ========================================================
+    // CONSULTAR CERTIFICADO
+    // ========================================================
 
     const certificadoResponse = await fetch(
       `${supabaseUrl}/rest/v1/certificados` +
-        `?select=` +
+        `?codigo=eq.${encodeURIComponent(codigo)}` +
+        `&select=` +
         `codigo,fecha_emision,estado,` +
         `ventas(` +
         `id,numero_venta,fecha_compra,garantia_anios,foto_url,` +
         `clientes(nombre,correo,telefono),` +
         `productos(referencia,nombre,material,piedra,precio)` +
-        `)` +
-        `&codigo=eq.${encodeURIComponent(codigo)}` +
-        `&limit=1`,
+        `)`,
       {
         headers: {
           apikey: serviceRoleKey,
           Authorization: `Bearer ${serviceRoleKey}`,
         },
-      }
+      },
     );
 
     if (!certificadoResponse.ok) {
+      const errorText =
+        await certificadoResponse.text();
+
       throw new Error(
-        "No se pudo consultar el certificado."
+        `Error consultando certificado: ${errorText}`,
       );
     }
 
@@ -92,11 +114,11 @@ Deno.serve(async (req) => {
       await certificadoResponse.json();
 
     if (
-      !certificados ||
+      !Array.isArray(certificados) ||
       certificados.length === 0
     ) {
       throw new Error(
-        `No existe el certificado ${codigo}.`
+        `No se encontró el certificado ${codigo}.`,
       );
     }
 
@@ -105,116 +127,229 @@ Deno.serve(async (req) => {
 
     if (!venta) {
       throw new Error(
-        "El certificado no tiene una venta asociada."
+        "El certificado no tiene una venta asociada.",
       );
     }
 
     const cliente = venta.clientes;
     const producto = venta.productos;
 
-    // ============================================================
-    // 2. CREAR PDF
-    // ============================================================
+    // ========================================================
+    // DATOS DEL PRODUCTO
+    // ========================================================
 
-    const pdfDoc = await PDFDocument.create();
+    const nombreCliente =
+      cliente?.nombre || nombre;
+
+    const telefonoCliente =
+      cliente?.telefono || telefono;
+
+    const nombreProducto =
+      producto?.nombre || "Joyería Casa Orus";
+
+    const referencia =
+      producto?.referencia || "Sin referencia";
+
+    const material =
+      producto?.material || "Oro laminado";
+
+    const piedra =
+      producto?.piedra || "Piedra natural";
+
+    const precio =
+      producto?.precio ?? null;
+
+    const numeroVenta =
+      venta.numero_venta || "Sin número";
+
+    const fechaCompra =
+      venta.fecha_compra || certificado.fecha_emision;
+
+    const garantiaAnios =
+      venta.garantia_anios || 5;
+
+    // ========================================================
+    // DESCARGAR LOGO DESDE BUCKET "logos"
+    // ========================================================
+
+    let logoBytes: Uint8Array | null = null;
+
+    const logoUrl =
+      `${supabaseUrl}/storage/v1/object/public/` +
+      `logos/logo-casa-orus.png`;
+
+    console.log(
+      "Cargando logo desde:",
+      logoUrl,
+    );
+
+    const logoResponse =
+      await fetch(logoUrl);
+
+    if (logoResponse.ok) {
+      logoBytes = new Uint8Array(
+        await logoResponse.arrayBuffer(),
+      );
+
+      console.log(
+        "Logo Casa Orus cargado correctamente.",
+      );
+    } else {
+      console.error(
+        "No se pudo cargar el logo.",
+        logoResponse.status,
+      );
+    }
+
+    // ========================================================
+    // DESCARGAR FOTO DEL PRODUCTO
+    // ========================================================
+
+    let fotoBytes: Uint8Array | null = null;
+    let fotoTipo = "";
+
+    if (venta.foto_url) {
+      const partesRuta =
+        String(venta.foto_url)
+          .split("/")
+          .map((parte) =>
+            encodeURIComponent(parte)
+          )
+          .join("/");
+
+      const fotoUrl =
+        `${supabaseUrl}/storage/v1/object/public/joyas/${partesRuta}`;
+
+      console.log(
+        "Cargando fotografía:",
+        fotoUrl,
+      );
+
+      const fotoResponse =
+        await fetch(fotoUrl);
+
+      if (fotoResponse.ok) {
+        fotoBytes = new Uint8Array(
+          await fotoResponse.arrayBuffer(),
+        );
+
+        fotoTipo =
+          fotoResponse.headers.get(
+            "content-type",
+          ) || "";
+
+        console.log(
+          "Fotografía cargada:",
+          fotoTipo,
+        );
+      } else {
+        console.error(
+          "No se pudo cargar la fotografía:",
+          fotoResponse.status,
+        );
+      }
+    }
+
+    // ========================================================
+    // CREAR PDF
+    // ========================================================
+
+    const pdfDoc =
+      await PDFDocument.create();
 
     const width = 595;
     const height = 842;
 
+    // ========================================================
+    // FUENTES
+    // ========================================================
+
+    const fontRegular =
+      await pdfDoc.embedFont(
+        StandardFonts.Helvetica,
+      );
+
+    const fontBold =
+      await pdfDoc.embedFont(
+        StandardFonts.HelveticaBold,
+      );
+
+    const fontOblique =
+      await pdfDoc.embedFont(
+        StandardFonts.HelveticaOblique,
+      );
+
+    // ========================================================
+    // COLORES CASA ORUS
+    // ========================================================
+
     const marfil = rgb(
-      0.96,
-      0.94,
-      0.89
+      0.97,
+      0.955,
+      0.92,
+    );
+
+    const marfilClaro = rgb(
+      0.985,
+      0.98,
+      0.95,
     );
 
     const dorado = rgb(
       0.72,
-      0.55,
-      0.20
+      0.56,
+      0.23,
     );
 
-    const gris = rgb(
-      0.30,
-      0.30,
-      0.30
+    const doradoClaro = rgb(
+      0.82,
+      0.69,
+      0.40,
     );
 
     const negro = rgb(
       0.10,
-      0.10,
-      0.10
+      0.09,
+      0.08,
+    );
+
+    const gris = rgb(
+      0.40,
+      0.38,
+      0.35,
+    );
+
+    const grisClaro = rgb(
+      0.70,
+      0.68,
+      0.63,
     );
 
     const blanco = rgb(
       1,
       1,
-      1
+      1,
     );
 
-    const fontRegular =
-      await pdfDoc.embedFont(
-        StandardFonts.Helvetica
-      );
+    // ========================================================
+    // FUNCIONES AUXILIARES
+    // ========================================================
 
-    const fontBold =
-      await pdfDoc.embedFont(
-        StandardFonts.HelveticaBold
-      );
-
-    // ============================================================
-    // 3. CARGAR LOGO DESDE RENDER
-    // ============================================================
-
-    let logoBytes: Uint8Array | null = null;
-
-    try {
-      const logoUrl =
-        "https://casa-orus.onrender.com/logo-casa-orus.png";
-
-      const logoResponse =
-        await fetch(logoUrl);
-
-      if (logoResponse.ok) {
-        logoBytes =
-          new Uint8Array(
-            await logoResponse.arrayBuffer()
-          );
-
-        console.log(
-          "✅ Logo cargado desde Render"
-        );
-      } else {
-        console.error(
-          "❌ Error cargando logo desde Render:",
-          logoResponse.status
-        );
-      }
-    } catch (error) {
-      console.error(
-        "❌ Error descargando logo:",
-        error
-      );
-    }
-
-    // ============================================================
-    // 4. FUNCIÓN PARA TEXTO CENTRADO
-    // ============================================================
-
-    function centeredText(
+    function centrarTexto(
       page: any,
-      text: string,
+      texto: string,
       y: number,
       size: number,
       font: any,
-      color: any
+      color: any,
     ) {
       const textWidth =
         font.widthOfTextAtSize(
-          text,
-          size
+          texto,
+          size,
         );
 
-      page.drawText(text, {
+      page.drawText(texto, {
         x: (width - textWidth) / 2,
         y,
         size,
@@ -223,17 +358,208 @@ Deno.serve(async (req) => {
       });
     }
 
+    function dibujarLinea(
+      page: any,
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      thickness = 1,
+      color = doradoClaro,
+    ) {
+      page.drawLine({
+        start: {
+          x: x1,
+          y: y1,
+        },
+        end: {
+          x: x2,
+          y: y2,
+        },
+        thickness,
+        color,
+      });
+    }
+
+    function dibujarCaja(
+      page: any,
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      fill: any,
+      border = doradoClaro,
+    ) {
+      page.drawRectangle({
+        x,
+        y,
+        width: w,
+        height: h,
+        color: fill,
+        borderColor: border,
+        borderWidth: 1,
+      });
+    }
+
+    function textoEnvuelto(
+      page: any,
+      texto: string,
+      x: number,
+      y: number,
+      maxWidth: number,
+      size: number,
+      font: any,
+      color: any,
+      lineHeight: number,
+    ) {
+      const palabras =
+        texto.split(" ");
+
+      const lineas: string[] = [];
+
+      let lineaActual = "";
+
+      for (const palabra of palabras) {
+        const prueba =
+          lineaActual.length === 0
+            ? palabra
+            : `${lineaActual} ${palabra}`;
+
+        const ancho =
+          font.widthOfTextAtSize(
+            prueba,
+            size,
+          );
+
+        if (
+          ancho <= maxWidth ||
+          lineaActual.length === 0
+        ) {
+          lineaActual = prueba;
+        } else {
+          lineas.push(lineaActual);
+          lineaActual = palabra;
+        }
+      }
+
+      if (lineaActual) {
+        lineas.push(lineaActual);
+      }
+
+      lineas.forEach(
+        (linea, index) => {
+          page.drawText(linea, {
+            x,
+            y:
+              y -
+              index * lineHeight,
+            size,
+            font,
+            color,
+          });
+        },
+      );
+
+      return lineas.length;
+    }
+
+    function dibujarTituloSeccion(
+      page: any,
+      titulo: string,
+      y: number,
+    ) {
+      centrarTexto(
+        page,
+        titulo,
+        y,
+        11,
+        fontBold,
+        dorado,
+      );
+
+      dibujarLinea(
+        page,
+        180,
+        y - 8,
+        415,
+        y - 8,
+        0.8,
+        doradoClaro,
+      );
+    }
+
+    // ========================================================
+    // PREPARAR LOGO
+    // ========================================================
+
+    let logoImage: any = null;
+
+    if (logoBytes) {
+      try {
+        logoImage =
+          await pdfDoc.embedPng(
+            logoBytes,
+          );
+
+        console.log(
+          "Logo incrustado en PDF.",
+        );
+      } catch (error) {
+        console.error(
+          "No se pudo incrustar el logo:",
+          error,
+        );
+      }
+    }
+
+    // ========================================================
+    // PREPARAR FOTO
+    // ========================================================
+
+    let fotoImage: any = null;
+
+    if (fotoBytes) {
+      try {
+        if (
+          fotoTipo.includes("png")
+        ) {
+          fotoImage =
+            await pdfDoc.embedPng(
+              fotoBytes,
+            );
+        } else if (
+          fotoTipo.includes("jpeg") ||
+          fotoTipo.includes("jpg")
+        ) {
+          fotoImage =
+            await pdfDoc.embedJpg(
+              fotoBytes,
+            );
+        } else {
+          console.error(
+            "Formato de fotografía no compatible:",
+            fotoTipo,
+          );
+        }
+      } catch (error) {
+        console.error(
+          "No se pudo incrustar la fotografía:",
+          error,
+        );
+      }
+    }
+
     // ============================================================
-    // 5. PÁGINA 1 - CERTIFICADO
+    // PÁGINA 1 — CERTIFICADO
     // ============================================================
 
-    const page =
+    const page1 =
       pdfDoc.addPage([
         width,
         height,
       ]);
 
-    page.drawRectangle({
+    page1.drawRectangle({
       x: 0,
       y: 0,
       width,
@@ -241,388 +567,347 @@ Deno.serve(async (req) => {
       color: marfil,
     });
 
-    // Bordes elegantes
-
-    page.drawRectangle({
-      x: 25,
-      y: 25,
-      width: width - 50,
-      height: height - 50,
+    // Marco exterior
+    page1.drawRectangle({
+      x: 22,
+      y: 22,
+      width: width - 44,
+      height: height - 44,
       borderColor: dorado,
-      borderWidth: 2,
+      borderWidth: 1.5,
     });
 
-    page.drawRectangle({
-      x: 34,
-      y: 34,
-      width: width - 68,
-      height: height - 68,
-      borderColor: dorado,
-      borderWidth: 0.7,
+    page1.drawRectangle({
+      x: 29,
+      y: 29,
+      width: width - 58,
+      height: height - 58,
+      borderColor: doradoClaro,
+      borderWidth: 0.6,
     });
 
-    // ============================================================
-    // LOGO
-    // ============================================================
-
-    if (logoBytes) {
-      try {
-        const logoImage =
-          await pdfDoc.embedPng(
-            logoBytes
-          );
-
-        const logoWidth = 170;
-
-        const logoHeight =
-          (logoImage.height /
-            logoImage.width) *
-          logoWidth;
-
-        page.drawImage(
-          logoImage,
-          {
-            x:
-              (width -
-                logoWidth) /
-              2,
-
-            y: 700,
-
-            width:
-              logoWidth,
-
-            height:
-              logoHeight,
-          }
-        );
-      } catch (error) {
-        console.error(
-          "❌ Error insertando logo:",
-          error
+    // Logo
+    if (logoImage) {
+      const logoScale =
+        Math.min(
+          190 / logoImage.width,
+          80 / logoImage.height,
         );
 
-        centeredText(
-          page,
-          "CASA ORUS",
-          710,
-          25,
-          fontBold,
-          dorado
-        );
-      }
+      const logoW =
+        logoImage.width *
+        logoScale;
+
+      const logoH =
+        logoImage.height *
+        logoScale;
+
+      page1.drawImage(
+        logoImage,
+        {
+          x:
+            (width - logoW) / 2,
+          y: 705,
+          width: logoW,
+          height: logoH,
+        },
+      );
     } else {
-      centeredText(
-        page,
+      centrarTexto(
+        page1,
         "CASA ORUS",
-        710,
+        720,
         25,
         fontBold,
-        dorado
+        dorado,
       );
     }
 
-    // ============================================================
-    // TÍTULO
-    // ============================================================
-
-    centeredText(
-      page,
+    centrarTexto(
+      page1,
       "CERTIFICADO DE GARANTÍA",
-      635,
+      650,
       20,
       fontBold,
-      negro
+      negro,
     );
 
-    centeredText(
-      page,
-      "Certificado de autenticidad y garantía",
-      610,
+    centrarTexto(
+      page1,
+      "Joyería que trasciende",
+      625,
       10,
-      fontRegular,
-      gris
+      fontOblique,
+      gris,
     );
 
-    // Línea decorativa
+    dibujarLinea(
+      page1,
+      150,
+      602,
+      445,
+      602,
+      1,
+      dorado,
+    );
 
-    page.drawLine({
-      start: {
-        x: 150,
-        y: 590,
+    // Nombre cliente
+    centrarTexto(
+      page1,
+      "CERTIFICADO EMITIDO A",
+      560,
+      9,
+      fontBold,
+      dorado,
+    );
+
+    centrarTexto(
+      page1,
+      nombreCliente,
+      530,
+      22,
+      fontBold,
+      negro,
+    );
+
+    // Caja producto
+    dibujarCaja(
+      page1,
+      75,
+      315,
+      445,
+      185,
+      marfilClaro,
+      doradoClaro,
+    );
+
+    dibujarTituloSeccion(
+      page1,
+      "DETALLES DE LA PIEZA",
+      470,
+    );
+
+    // Columna izquierda
+    page1.drawText(
+      "PRODUCTO",
+      {
+        x: 105,
+        y: 430,
+        size: 8,
+        font: fontBold,
+        color: gris,
       },
+    );
 
-      end: {
-        x: 445,
-        y: 590,
+    page1.drawText(
+      nombreProducto,
+      {
+        x: 105,
+        y: 410,
+        size: 12,
+        font: fontBold,
+        color: negro,
       },
-
-      thickness: 1,
-      color: dorado,
-    });
-
-    // ============================================================
-    // CLIENTE
-    // ============================================================
-
-    centeredText(
-      page,
-      "CLIENTE",
-      545,
-      9,
-      fontBold,
-      dorado
     );
 
-    centeredText(
-      page,
-      cliente?.nombre ||
-        nombre,
-      515,
-      18,
-      fontBold,
-      negro
+    page1.drawText(
+      "REFERENCIA",
+      {
+        x: 105,
+        y: 378,
+        size: 8,
+        font: fontBold,
+        color: gris,
+      },
     );
 
-    // ============================================================
-    // PRODUCTO
-    // ============================================================
-
-    centeredText(
-      page,
-      "PIEZA REGISTRADA",
-      465,
-      9,
-      fontBold,
-      dorado
+    page1.drawText(
+      referencia,
+      {
+        x: 105,
+        y: 359,
+        size: 11,
+        font: fontRegular,
+        color: negro,
+      },
     );
 
-    centeredText(
-      page,
-      producto?.nombre ||
-        "Joyería Casa Orus",
-      438,
-      14,
-      fontBold,
-      negro
+    // Columna derecha
+    page1.drawText(
+      "MATERIAL",
+      {
+        x: 325,
+        y: 430,
+        size: 8,
+        font: fontBold,
+        color: gris,
+      },
     );
 
-    centeredText(
-      page,
-      `Referencia: ${
-        producto?.referencia ||
-        "N/A"
-      }`,
-      415,
-      10,
-      fontRegular,
-      gris
+    page1.drawText(
+      material,
+      {
+        x: 325,
+        y: 410,
+        size: 11,
+        font: fontRegular,
+        color: negro,
+      },
     );
 
-    if (producto?.material) {
-      centeredText(
-        page,
-        `Material: ${producto.material}`,
-        397,
-        10,
-        fontRegular,
-        gris
-      );
-    }
-
-    if (producto?.piedra) {
-      centeredText(
-        page,
-        `Piedra natural: ${producto.piedra}`,
-        379,
-        10,
-        fontRegular,
-        gris
-      );
-    }
-
-    // ============================================================
-    // DATOS DE VENTA
-    // ============================================================
-
-    centeredText(
-      page,
-      `Número de venta: ${
-        venta.numero_venta ||
-        "N/A"
-      }`,
-      340,
-      10,
-      fontRegular,
-      gris
+    page1.drawText(
+      "PIEDRA",
+      {
+        x: 325,
+        y: 378,
+        size: 8,
+        font: fontBold,
+        color: gris,
+      },
     );
 
-    centeredText(
-      page,
-      `Fecha de compra: ${
-        venta.fecha_compra ||
-        "N/A"
-      }`,
-      322,
-      10,
-      fontRegular,
-      gris
+    page1.drawText(
+      piedra,
+      {
+        x: 325,
+        y: 359,
+        size: 11,
+        font: fontRegular,
+        color: negro,
+      },
     );
 
-    // ============================================================
-    // GARANTÍA
-    // ============================================================
-
-    centeredText(
-      page,
-      "GARANTÍA",
-      275,
-      9,
-      fontBold,
-      dorado
+    // Fecha / venta
+    page1.drawText(
+      "FECHA DE COMPRA",
+      {
+        x: 105,
+        y: 330,
+        size: 8,
+        font: fontBold,
+        color: gris,
+      },
     );
 
-    centeredText(
-      page,
-      `Esta pieza cuenta con ${
-        venta.garantia_anios ||
-        5
-      } años de garantía sobre el oro laminado.`,
-      250,
-      10,
-      fontRegular,
-      negro
+    page1.drawText(
+      String(fechaCompra),
+      {
+        x: 105,
+        y: 313,
+        size: 10,
+        font: fontRegular,
+        color: negro,
+      },
     );
 
-    // ============================================================
-    // CÓDIGO
-    // ============================================================
+    page1.drawText(
+      "N.º DE VENTA",
+      {
+        x: 325,
+        y: 330,
+        size: 8,
+        font: fontBold,
+        color: gris,
+      },
+    );
 
-    page.drawRectangle({
-      x: 150,
-      y: 160,
-      width: 295,
-      height: 58,
-      color: blanco,
+    page1.drawText(
+      String(numeroVenta),
+      {
+        x: 325,
+        y: 313,
+        size: 10,
+        font: fontRegular,
+        color: negro,
+      },
+    );
+
+    // Garantía
+    page1.drawCircle({
+      x: 297.5,
+      y: 235,
+      size: 48,
+      color: marfilClaro,
       borderColor: dorado,
-      borderWidth: 1,
+      borderWidth: 1.5,
     });
 
-    centeredText(
-      page,
+    centrarTexto(
+      page1,
+      `${garantiaAnios}`,
+      238,
+      23,
+      fontBold,
+      dorado,
+    );
+
+    centrarTexto(
+      page1,
+      "AÑOS",
+      220,
+      7,
+      fontBold,
+      gris,
+    );
+
+    centrarTexto(
+      page1,
+      "GARANTÍA SOBRE EL ORO LAMINADO",
+      170,
+      10,
+      fontBold,
+      negro,
+    );
+
+    centrarTexto(
+      page1,
+      "Respaldamos la calidad y autenticidad de nuestras piezas.",
+      148,
+      9,
+      fontRegular,
+      gris,
+    );
+
+    // Código
+    dibujarCaja(
+      page1,
+      155,
+      82,
+      285,
+      42,
+      marfilClaro,
+      dorado,
+    );
+
+    centrarTexto(
+      page1,
       "CÓDIGO DE CERTIFICADO",
-      200,
-      8,
+      108,
+      7,
       fontBold,
-      dorado
+      gris,
     );
 
-    centeredText(
-      page,
+    centrarTexto(
+      page1,
       codigo,
-      177,
-      15,
+      90,
+      13,
       fontBold,
-      negro
+      dorado,
     );
 
-    // ============================================================
-    // FRASE FINAL
-    // ============================================================
-
-    centeredText(
-      page,
-      "Joyería que trasciende,",
-      110,
-      10,
+    centrarTexto(
+      page1,
+      "CASA ORUS • JOYERÍA ARTESANAL",
+      52,
+      7,
       fontRegular,
-      gris
-    );
-
-    centeredText(
-      page,
-      "creada para acompañarte en cada historia.",
-      94,
-      10,
-      fontRegular,
-      gris
-    );
-
-    centeredText(
-      page,
-      "CASA ORUS",
-      60,
-      8,
-      fontBold,
-      dorado
+      gris,
     );
 
     // ============================================================
-    // 6. DESCARGAR FOTO DE LA JOYA
-    // ============================================================
-
-    let fotoBytes:
-      Uint8Array | null = null;
-
-    let fotoTipo = "";
-
-    if (venta.foto_url) {
-      try {
-        const partes =
-          venta.foto_url
-            .split("/")
-            .map(
-              (parte: string) =>
-                encodeURIComponent(parte)
-            )
-            .join("/");
-
-        const fotoUrl =
-          `${supabaseUrl}` +
-          `/storage/v1/object/public/joyas/` +
-          partes;
-
-        console.log(
-          "📸 Descargando foto:",
-          fotoUrl
-        );
-
-        const fotoResponse =
-          await fetch(fotoUrl);
-
-        if (fotoResponse.ok) {
-          fotoBytes =
-            new Uint8Array(
-              await fotoResponse.arrayBuffer()
-            );
-
-          fotoTipo =
-            fotoResponse.headers.get(
-              "content-type"
-            ) || "";
-
-          console.log(
-            "✅ Foto descargada:",
-            fotoTipo,
-            fotoBytes.length,
-            "bytes"
-          );
-        } else {
-          console.error(
-            "❌ No se pudo descargar la foto:",
-            fotoResponse.status
-          );
-        }
-      } catch (error) {
-        console.error(
-          "❌ Error descargando foto:",
-          error
-        );
-      }
-    }
-
-    // ============================================================
-    // 7. PÁGINA 2 - REGISTRO FOTOGRÁFICO
+    // PÁGINA 2 — REGISTRO FOTOGRÁFICO
     // ============================================================
 
     const page2 =
@@ -640,391 +925,590 @@ Deno.serve(async (req) => {
     });
 
     page2.drawRectangle({
-      x: 25,
-      y: 25,
-      width: width - 50,
-      height: height - 50,
+      x: 22,
+      y: 22,
+      width: width - 44,
+      height: height - 44,
       borderColor: dorado,
-      borderWidth: 2,
+      borderWidth: 1.5,
     });
 
-    page2.drawRectangle({
-      x: 34,
-      y: 34,
-      width: width - 68,
-      height: height - 68,
-      borderColor: dorado,
-      borderWidth: 0.7,
-    });
-
-    // ============================================================
-    // LOGO EN PÁGINA 2
-    // ============================================================
-
-    if (logoBytes) {
-      try {
-        const logoImage =
-          await pdfDoc.embedPng(
-            logoBytes
-          );
-
-        const logoWidth = 120;
-
-        const logoHeight =
-          (logoImage.height /
-            logoImage.width) *
-          logoWidth;
-
-        page2.drawImage(
-          logoImage,
-          {
-            x:
-              (width -
-                logoWidth) /
-              2,
-
-            y: 735,
-
-            width:
-              logoWidth,
-
-            height:
-              logoHeight,
-          }
-        );
-      } catch (error) {
-        console.error(
-          "❌ Error insertando logo página 2:",
-          error
-        );
-      }
-    }
-
-    centeredText(
-      page2,
-      "REGISTRO FOTOGRÁFICO",
-      690,
-      18,
-      fontBold,
-      negro
-    );
-
-    centeredText(
-      page2,
-      "Pieza registrada en el momento de la compra",
-      665,
-      9,
-      fontRegular,
-      gris
-    );
-
-    // ============================================================
-    // FOTO SIN DEFORMAR
-    // ============================================================
-
-    if (fotoBytes) {
-      try {
-        let imagen: any;
-
-        if (
-          fotoTipo
-            .toLowerCase()
-            .includes("png")
-        ) {
-          imagen =
-            await pdfDoc.embedPng(
-              fotoBytes
-            );
-        } else if (
-          fotoTipo
-            .toLowerCase()
-            .includes("jpeg") ||
-          fotoTipo
-            .toLowerCase()
-            .includes("jpg")
-        ) {
-          imagen =
-            await pdfDoc.embedJpg(
-              fotoBytes
-            );
-        } else {
-          throw new Error(
-            `Formato de imagen no compatible: ${fotoTipo}`
-          );
-        }
-
-        const imageWidth =
-          imagen.width;
-
-        const imageHeight =
-          imagen.height;
-
-        // Área máxima para la foto
-
-        const maxWidth = 470;
-        const maxHeight = 525;
-
-        // Escala manteniendo proporción
-
-        const escala = Math.min(
-          maxWidth /
-            imageWidth,
-
-          maxHeight /
-            imageHeight
+    // Logo página 2
+    if (logoImage) {
+      const logoScale =
+        Math.min(
+          150 / logoImage.width,
+          60 / logoImage.height,
         );
 
-        const finalWidth =
-          imageWidth *
-          escala;
+      const logoW =
+        logoImage.width *
+        logoScale;
 
-        const finalHeight =
-          imageHeight *
-          escala;
+      const logoH =
+        logoImage.height *
+        logoScale;
 
-        // Centrada horizontalmente
-
-        const x =
-          (width -
-            finalWidth) /
-          2;
-
-        // Centrada dentro del área disponible
-
-        const y =
-          105 +
-          (525 -
-            finalHeight) /
-            2;
-
-        // Marco de la fotografía
-
-        page2.drawRectangle({
-          x: 55,
-          y: 95,
-          width: 485,
-          height: 545,
-          color: blanco,
-          borderColor: dorado,
-          borderWidth: 1,
-        });
-
-        page2.drawImage(
-          imagen,
-          {
-            x,
-            y,
-            width:
-              finalWidth,
-            height:
-              finalHeight,
-          }
-        );
-
-        console.log(
-          "✅ Foto insertada sin deformar:",
-          imageWidth,
-          "x",
-          imageHeight,
-          "→",
-          finalWidth,
-          "x",
-          finalHeight
-        );
-      } catch (error) {
-        console.error(
-          "❌ No se pudo insertar la fotografía:",
-          error
-        );
-
-        centeredText(
-          page2,
-          "No fue posible insertar la fotografía.",
-          380,
-          10,
-          fontRegular,
-          gris
-        );
-      }
-    } else {
-      centeredText(
-        page2,
-        "No se encontró fotografía de la pieza.",
-        380,
-        10,
-        fontRegular,
-        gris
+      page2.drawImage(
+        logoImage,
+        {
+          x:
+            (width - logoW) / 2,
+          y: 720,
+          width: logoW,
+          height: logoH,
+        },
       );
     }
 
-    // ============================================================
-    // PIE DE PÁGINA
-    // ============================================================
-
-    centeredText(
+    centrarTexto(
       page2,
-      `Certificado: ${codigo}`,
-      65,
-      8,
-      fontRegular,
-      gris
+      "REGISTRO FOTOGRÁFICO",
+      665,
+      19,
+      fontBold,
+      negro,
     );
 
-    centeredText(
+    centrarTexto(
       page2,
-      "CASA ORUS",
-      48,
+      "Pieza registrada al momento de la compra",
+      640,
+      9,
+      fontRegular,
+      gris,
+    );
+
+    dibujarLinea(
+      page2,
+      150,
+      620,
+      445,
+      620,
+      1,
+      dorado,
+    );
+
+    // ------------------------------------------------------------
+    // ÁREA VERTICAL PARA LA FOTO
+    // ------------------------------------------------------------
+
+    const fotoAreaX = 105;
+    const fotoAreaY = 145;
+    const fotoAreaW = 385;
+    const fotoAreaH = 440;
+
+    // Marco de fotografía
+    page2.drawRectangle({
+      x: fotoAreaX,
+      y: fotoAreaY,
+      width: fotoAreaW,
+      height: fotoAreaH,
+      color: blanco,
+      borderColor: doradoClaro,
+      borderWidth: 1,
+    });
+
+    if (fotoImage) {
+      // ==========================================================
+      // ESCALADO PROPORCIONAL
+      // La foto SIEMPRE queda dentro de un área vertical.
+      // Nunca se estira ni se deforma.
+      // ==========================================================
+
+      const margen = 18;
+
+      const maxW =
+        fotoAreaW - margen * 2;
+
+      const maxH =
+        fotoAreaH - margen * 2;
+
+      const escala =
+        Math.min(
+          maxW / fotoImage.width,
+          maxH / fotoImage.height,
+        );
+
+      const imagenW =
+        fotoImage.width *
+        escala;
+
+      const imagenH =
+        fotoImage.height *
+        escala;
+
+      const imagenX =
+        fotoAreaX +
+        (fotoAreaW - imagenW) / 2;
+
+      const imagenY =
+        fotoAreaY +
+        (fotoAreaH - imagenH) / 2;
+
+      page2.drawImage(
+        fotoImage,
+        {
+          x: imagenX,
+          y: imagenY,
+          width: imagenW,
+          height: imagenH,
+        },
+      );
+    } else {
+      centrarTexto(
+        page2,
+        "FOTOGRAFÍA NO DISPONIBLE",
+        360,
+        11,
+        fontBold,
+        gris,
+      );
+
+      centrarTexto(
+        page2,
+        "La pieza fue registrada sin fotografía.",
+        338,
+        8,
+        fontRegular,
+        grisClaro,
+      );
+    }
+
+    // Información inferior
+    dibujarCaja(
+      page2,
+      90,
+      82,
+      415,
+      38,
+      marfilClaro,
+      doradoClaro,
+    );
+
+    centrarTexto(
+      page2,
+      `REFERENCIA: ${referencia}  •  CÓDIGO: ${codigo}`,
+      97,
       8,
       fontBold,
-      dorado
+      negro,
+    );
+
+    centrarTexto(
+      page2,
+      "CASA ORUS • REGISTRO DE PIEZA",
+      50,
+      7,
+      fontRegular,
+      gris,
     );
 
     // ============================================================
-    // 8. GUARDAR PDF
+    // PÁGINA 3 — GARANTÍA Y CUIDADOS
+    // ============================================================
+
+    const page3 =
+      pdfDoc.addPage([
+        width,
+        height,
+      ]);
+
+    page3.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      color: marfil,
+    });
+
+    page3.drawRectangle({
+      x: 22,
+      y: 22,
+      width: width - 44,
+      height: height - 44,
+      borderColor: dorado,
+      borderWidth: 1.5,
+    });
+
+    // Logo
+    if (logoImage) {
+      const logoScale =
+        Math.min(
+          140 / logoImage.width,
+          55 / logoImage.height,
+        );
+
+      const logoW =
+        logoImage.width *
+        logoScale;
+
+      const logoH =
+        logoImage.height *
+        logoScale;
+
+      page3.drawImage(
+        logoImage,
+        {
+          x:
+            (width - logoW) / 2,
+          y: 735,
+          width: logoW,
+          height: logoH,
+        },
+      );
+    }
+
+    centrarTexto(
+      page3,
+      "GARANTÍA Y CUIDADOS",
+      690,
+      19,
+      fontBold,
+      negro,
+    );
+
+    centrarTexto(
+      page3,
+      "Información importante para conservar tu joya",
+      668,
+      9,
+      fontRegular,
+      gris,
+    );
+
+    dibujarLinea(
+      page3,
+      150,
+      650,
+      445,
+      650,
+      1,
+      dorado,
+    );
+
+    // ------------------------------------------------------------
+    // COMPROMISO DE CALIDAD
+    // ------------------------------------------------------------
+
+    dibujarTituloSeccion(
+      page3,
+      "COMPROMISO DE CALIDAD",
+      615,
+    );
+
+    textoEnvuelto(
+      page3,
+      `En Casa Orus respaldamos nuestras piezas con una garantía de ${garantiaAnios} años sobre el oro laminado, sujeta a las condiciones descritas en este certificado.`,
+      80,
+      588,
+      435,
+      9,
+      fontRegular,
+      negro,
+      15,
+    );
+
+    // ------------------------------------------------------------
+    // QUÉ CUBRE
+    // ------------------------------------------------------------
+
+    dibujarTituloSeccion(
+      page3,
+      "¿QUÉ CUBRE LA GARANTÍA?",
+      525,
+    );
+
+    const cubre = [
+      "Defectos de fabricación.",
+      "Problemas relacionados con la adherencia del oro laminado.",
+      "Revisión de la pieza por parte de Casa Orus.",
+    ];
+
+    let yCubre = 498;
+
+    cubre.forEach(
+      (texto) => {
+        page3.drawCircle({
+          x: 90,
+          y: yCubre + 3,
+          size: 2.5,
+          color: dorado,
+        });
+
+        page3.drawText(
+          texto,
+          {
+            x: 103,
+            y: yCubre,
+            size: 9,
+            font: fontRegular,
+            color: negro,
+          },
+        );
+
+        yCubre -= 21;
+      },
+    );
+
+    // ------------------------------------------------------------
+    // CUIDADOS
+    // ------------------------------------------------------------
+
+    dibujarTituloSeccion(
+      page3,
+      "CUIDADOS DE TU JOYA",
+      420,
+    );
+
+    const cuidados = [
+      "Evita químicos y humedad prolongada.",
+      "Evita perfumes, cremas, cloro y productos de limpieza.",
+      "Retira la joya antes de ducharte o nadar.",
+      "Guárdala siempre en su empaque.",
+      "Límpiala suavemente con un paño limpio y suave.",
+    ];
+
+    let yCuidados = 393;
+
+    cuidados.forEach(
+      (texto) => {
+        page3.drawCircle({
+          x: 90,
+          y: yCuidados + 3,
+          size: 2.5,
+          color: dorado,
+        });
+
+        textoEnvuelto(
+          page3,
+          texto,
+          103,
+          yCuidados,
+          400,
+          9,
+          fontRegular,
+          negro,
+          13,
+        );
+
+        yCuidados -= 27;
+      },
+    );
+
+    // ------------------------------------------------------------
+    // NO CUBRE
+    // ------------------------------------------------------------
+
+    dibujarTituloSeccion(
+      page3,
+      "LA GARANTÍA NO CUBRE",
+      255,
+    );
+
+    const noCubre = [
+      "Golpes, caídas, tirones o deformaciones.",
+      "Desgaste normal ocasionado por el uso.",
+      "Daños ocasionados por químicos o humedad.",
+      "Pérdida de la pieza, piedras o dijes.",
+    ];
+
+    let yNoCubre = 228;
+
+    noCubre.forEach(
+      (texto) => {
+        page3.drawCircle({
+          x: 90,
+          y: yNoCubre + 3,
+          size: 2.5,
+          color: dorado,
+        });
+
+        textoEnvuelto(
+          page3,
+          texto,
+          103,
+          yNoCubre,
+          400,
+          9,
+          fontRegular,
+          negro,
+          13,
+        );
+
+        yNoCubre -= 25;
+      },
+    );
+
+    // ------------------------------------------------------------
+    // SOLICITUD DE GARANTÍA
+    // ------------------------------------------------------------
+
+    dibujarCaja(
+      page3,
+      75,
+      73,
+      445,
+      78,
+      marfilClaro,
+      doradoClaro,
+    );
+
+    centrarTexto(
+      page3,
+      "SOLICITUD DE GARANTÍA",
+      128,
+      9,
+      fontBold,
+      dorado,
+    );
+
+    textoEnvuelto(
+      page3,
+      "Para solicitar una revisión, presenta este certificado junto con la pieza. Casa Orus realizará la inspección correspondiente.",
+      100,
+      107,
+      395,
+      8,
+      fontRegular,
+      negro,
+      13,
+    );
+
+    centrarTexto(
+      page3,
+      "✨ Joyería que trasciende, creada para acompañarte en cada historia.",
+      49,
+      7.5,
+      fontOblique,
+      gris,
+    );
+
+    // ============================================================
+    // GUARDAR PDF
     // ============================================================
 
     const pdfBytes =
       await pdfDoc.save();
 
     const pdfBase64 =
-      Uint8Array.from(
-        pdfBytes
+      uint8ArrayToBase64(
+        pdfBytes,
       );
 
-    let binary = "";
-
-    for (
-      let i = 0;
-      i < pdfBase64.length;
-      i++
-    ) {
-      binary += String.fromCharCode(
-        pdfBase64[i]
-      );
-    }
-
-    const base64Pdf =
-      btoa(binary);
+    console.log(
+      "PDF creado correctamente.",
+    );
 
     // ============================================================
-    // 9. SUBIR PDF A SUPABASE STORAGE
+    // SUBIR PDF A BUCKET "certificados"
     // ============================================================
 
-    const nombrePdf =
+    const nombreArchivo =
       `certificados/${codigo}.pdf`;
 
     const uploadResponse =
       await fetch(
-        `${supabaseUrl}` +
-          `/storage/v1/object/certificados/` +
-          `${encodeURIComponent(codigo)}.pdf`,
+        `${supabaseUrl}/storage/v1/object/${nombreArchivo}`,
         {
           method: "POST",
-
           headers: {
             Authorization:
               `Bearer ${serviceRoleKey}`,
-
-            apikey:
-              serviceRoleKey,
-
+            apikey: serviceRoleKey,
             "Content-Type":
               "application/pdf",
-
-            "x-upsert":
-              "true",
+            "x-upsert": "true",
           },
-
-          body:
-            pdfBytes,
-        }
+          body: pdfBytes,
+        },
       );
 
-    if (
-      !uploadResponse.ok
-    ) {
+    if (!uploadResponse.ok) {
       const uploadError =
         await uploadResponse.text();
 
       throw new Error(
-        "No se pudo subir el PDF: " +
-          uploadError
+        `Error subiendo PDF a Storage: ${uploadError}`,
       );
     }
 
     console.log(
-      "✅ PDF guardado en Storage"
+      "PDF guardado en bucket certificados.",
     );
 
     // ============================================================
-    // 10. URL PÚBLICA DEL PDF
+    // URL PÚBLICA DEL PDF
     // ============================================================
 
     const pdfPublicUrl =
-      `${supabaseUrl}` +
-      `/storage/v1/object/public/certificados/` +
-      `${encodeURIComponent(codigo)}.pdf`;
+      `${supabaseUrl}/storage/v1/object/public/` +
+      `certificados/${encodeURIComponent(codigo)}.pdf`;
 
     console.log(
-      "📄 URL PDF:",
-      pdfPublicUrl
+      "URL pública PDF:",
+      pdfPublicUrl,
     );
 
     // ============================================================
-    // 11. NORMALIZAR TELÉFONO
+    // NORMALIZAR TELÉFONO COLOMBIANO
     // ============================================================
 
-    let numero =
-      String(telefono)
-        .replace(/\D/g, "");
+    let numeroWhatsApp =
+      telefonoCliente.replace(
+        /\D/g,
+        "",
+      );
 
     if (
-      numero.startsWith("57")
+      numeroWhatsApp.startsWith(
+        "00",
+      )
     ) {
-      // Ya tiene código Colombia
+      numeroWhatsApp =
+        numeroWhatsApp.substring(2);
+    }
+
+    if (
+      numeroWhatsApp.startsWith(
+        "57",
+      )
+    ) {
+      // Ya tiene código de Colombia
     } else if (
-      numero.startsWith("3") &&
-      numero.length === 10
+      numeroWhatsApp.length === 10 &&
+      numeroWhatsApp.startsWith(
+        "3",
+      )
     ) {
-      numero =
-        "57" + numero;
-    } else {
-      throw new Error(
-        "Número de teléfono colombiano inválido."
-      );
+      numeroWhatsApp =
+        `57${numeroWhatsApp}`;
     }
 
     console.log(
-      "📱 Número WhatsApp:",
-      numero
+      "Número WhatsApp:",
+      numeroWhatsApp,
     );
 
     // ============================================================
-    // 12. ENVIAR PDF POR WHATSAPP - META
+    // ENVIAR PDF POR WHATSAPP
     // ============================================================
 
     const whatsappUrl =
       `https://graph.facebook.com/v23.0/` +
-      `${phoneNumberId}/messages`;
+      `${whatsappPhoneNumberId}/messages`;
 
-    const whatsappBody = {
-      messaging_product:
-        "whatsapp",
-
-      to: numero,
-
+    const whatsappPayload = {
+      messaging_product: "whatsapp",
+      to: numeroWhatsApp,
       type: "document",
-
       document: {
-        link:
-          pdfPublicUrl,
-
+        link: pdfPublicUrl,
         filename:
           `Certificado-Casa-Orus-${codigo}.pdf`,
-
         caption:
           `✨ Casa Orus\n\n` +
-          `Tu certificado de garantía está listo.\n` +
+          `Hola ${nombreCliente}, tu certificado de garantía está listo.\n\n` +
           `Código: ${codigo}`,
       },
     };
@@ -1034,86 +1518,66 @@ Deno.serve(async (req) => {
         whatsappUrl,
         {
           method: "POST",
-
           headers: {
             Authorization:
               `Bearer ${whatsappToken}`,
-
             "Content-Type":
               "application/json",
           },
-
-          body:
-            JSON.stringify(
-              whatsappBody
-            ),
-        }
+          body: JSON.stringify(
+            whatsappPayload,
+          ),
+        },
       );
 
     const whatsappResult =
       await whatsappResponse.json();
 
     console.log(
-      "📲 Respuesta WhatsApp:",
+      "Respuesta WhatsApp:",
       JSON.stringify(
-        whatsappResult
-      )
+        whatsappResult,
+      ),
     );
 
-    if (
-      !whatsappResponse.ok
-    ) {
+    if (!whatsappResponse.ok) {
       throw new Error(
-        "Meta WhatsApp rechazó el envío: " +
-          JSON.stringify(
-            whatsappResult
-          )
+        `WhatsApp rechazó el mensaje: ${JSON.stringify(
+          whatsappResult,
+        )}`,
       );
     }
 
     // ============================================================
-    // 13. RESPUESTA FINAL
+    // RESPUESTA FINAL
     // ============================================================
 
     return new Response(
       JSON.stringify({
         success: true,
-
         codigo,
-
-        numeroVenta:
-          venta.numero_venta,
-
-        pdf:
-          pdfPublicUrl,
-
-        whatsapp:
-          whatsappResult,
-
-        mensaje:
-          "Certificado creado y enviado correctamente.",
+        numeroVenta,
+        pdfUrl: pdfPublicUrl,
+        whatsapp: whatsappResult,
       }),
       {
         status: 200,
-
         headers: {
           ...corsHeaders,
-
           "Content-Type":
             "application/json",
         },
-      }
+      },
     );
   } catch (error) {
     console.error(
-      "❌ ERROR GENERAL:",
-      error
+      "ERROR GENERAL:",
+      error,
     );
 
     return new Response(
       JSON.stringify({
         success: false,
-
         error:
           error instanceof Error
             ? error.message
@@ -1121,14 +1585,45 @@ Deno.serve(async (req) => {
       }),
       {
         status: 500,
-
         headers: {
           ...corsHeaders,
-
           "Content-Type":
             "application/json",
         },
-      }
+      },
     );
   }
 });
+
+// ============================================================
+// UINT8ARRAY → BASE64
+// ============================================================
+
+function uint8ArrayToBase64(
+  bytes: Uint8Array,
+): string {
+  let binary = "";
+
+  const chunkSize = 0x8000;
+
+  for (
+    let i = 0;
+    i < bytes.length;
+    i += chunkSize
+  ) {
+    const chunk =
+      bytes.subarray(
+        i,
+        Math.min(
+          i + chunkSize,
+          bytes.length,
+        ),
+      );
+
+    binary += String.fromCharCode(
+      ...chunk,
+    );
+  }
+
+  return btoa(binary);
+}
