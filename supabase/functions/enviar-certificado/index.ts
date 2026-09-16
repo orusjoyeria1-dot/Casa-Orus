@@ -1,4 +1,4 @@
-﻿import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -62,10 +62,14 @@ Deno.serve(async (req: Request) => {
 
     const certificado = certificados[0];
     const venta = certificado.ventas;
-    const producto = venta.productos;
+    const producto = venta?.productos;
 
     if (!venta) {
       throw new Error("El certificado no tiene una venta asociada.");
+    }
+
+    if (!producto) {
+      throw new Error("La venta no tiene un producto asociado.");
     }
 
     // ==========================================
@@ -104,7 +108,35 @@ Deno.serve(async (req: Request) => {
     }
 
     // ==========================================
-    // PÁGINA 1 — CERTIFICADO
+    // 3. CARGAR LOGO CASA ORUS
+    // ==========================================
+
+    let logoBytes: Uint8Array | null = null;
+
+    try {
+      const logoUrl =
+        `${supabaseUrl}/storage/v1/object/public/Orus%20joyeria/logos/Logo-Casa-Orus-Real.png`;
+
+      const logoResponse = await fetch(logoUrl);
+
+      if (logoResponse.ok) {
+        logoBytes = new Uint8Array(
+          await logoResponse.arrayBuffer()
+        );
+
+        console.log("Logo Casa Orus cargado correctamente.");
+      } else {
+        console.error(
+          "No se pudo cargar el logo:",
+          await logoResponse.text()
+        );
+      }
+    } catch (error) {
+      console.error("Error cargando logo:", error);
+    }
+
+    // ==========================================
+    // 4. PÁGINA 1 — CERTIFICADO
     // ==========================================
 
     const page1 = pdfDoc.addPage([width, height]);
@@ -135,12 +167,58 @@ Deno.serve(async (req: Request) => {
       borderWidth: 0.7,
     });
 
-    centeredText(page1, "CASA ORUS", 745, 28, fontBold, dorado);
+    // ==========================================
+    // LOGO
+    // ==========================================
+
+    if (logoBytes) {
+      try {
+        const logo = await pdfDoc.embedPng(logoBytes);
+
+        const logoMaxWidth = 190;
+        const logoMaxHeight = 80;
+
+        const escala = Math.min(
+          logoMaxWidth / logo.width,
+          logoMaxHeight / logo.height
+        );
+
+        const logoWidth = logo.width * escala;
+        const logoHeight = logo.height * escala;
+
+        page1.drawImage(logo, {
+          x: (width - logoWidth) / 2,
+          y: 735,
+          width: logoWidth,
+          height: logoHeight,
+        });
+      } catch (error) {
+        console.error("No se pudo insertar el logo:", error);
+
+        centeredText(
+          page1,
+          "CASA ORUS",
+          755,
+          28,
+          fontBold,
+          dorado
+        );
+      }
+    } else {
+      centeredText(
+        page1,
+        "CASA ORUS",
+        755,
+        28,
+        fontBold,
+        dorado
+      );
+    }
 
     centeredText(
       page1,
       "CERTIFICADO DE AUTENTICIDAD",
-      700,
+      680,
       18,
       fontBold,
       gris
@@ -149,15 +227,15 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       "Joyería que trasciende",
-      670,
+      650,
       11,
       fontRegular,
       dorado
     );
 
     page1.drawLine({
-      start: { x: 120, y: 640 },
-      end: { x: width - 120, y: 640 },
+      start: { x: 120, y: 620 },
+      end: { x: width - 120, y: 620 },
       thickness: 1,
       color: dorado,
     });
@@ -165,7 +243,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       "Esta pieza pertenece oficialmente a",
-      590,
+      570,
       11,
       fontRegular,
       gris
@@ -174,7 +252,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       nombre.toUpperCase(),
-      550,
+      530,
       20,
       fontBold,
       dorado
@@ -183,18 +261,25 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       "Código de certificado",
-      495,
+      475,
       10,
       fontRegular,
       gris
     );
 
-    centeredText(page1, codigo, 465, 17, fontBold, gris);
+    centeredText(
+      page1,
+      codigo,
+      445,
+      17,
+      fontBold,
+      gris
+    );
 
     centeredText(
       page1,
       `Venta: ${venta.numero_venta}`,
-      425,
+      405,
       11,
       fontRegular,
       gris
@@ -203,7 +288,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       `Referencia: ${producto.referencia}`,
-      400,
+      380,
       11,
       fontRegular,
       gris
@@ -212,7 +297,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       producto.nombre,
-      370,
+      350,
       14,
       fontBold,
       dorado
@@ -221,7 +306,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       `Material: ${producto.material || "Oro laminado"}`,
-      335,
+      315,
       10,
       fontRegular,
       gris
@@ -231,7 +316,7 @@ Deno.serve(async (req: Request) => {
       centeredText(
         page1,
         `Piedra natural: ${producto.piedra}`,
-        315,
+        295,
         10,
         fontRegular,
         gris
@@ -241,7 +326,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       `Garantía: ${venta.garantia_anios || 5} años`,
-      270,
+      250,
       12,
       fontBold,
       dorado
@@ -250,7 +335,7 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       "Gracias por elegir Casa Orus.",
-      190,
+      175,
       11,
       fontRegular,
       gris
@@ -259,14 +344,14 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page1,
       "Una joya para siempre.",
-      165,
+      150,
       12,
       fontBold,
       dorado
     );
 
     // ==========================================
-    // 3. OBTENER FOTO
+    // 5. OBTENER FOTO
     // ==========================================
 
     let fotoBytes: Uint8Array | null = null;
@@ -274,7 +359,12 @@ Deno.serve(async (req: Request) => {
 
     if (venta.foto_url) {
       const fotoUrl =
-        `${supabaseUrl}/storage/v1/object/public/joyas/${venta.foto_url}`;
+        `${supabaseUrl}/storage/v1/object/public/joyas/${venta.foto_url
+          .split("/")
+          .map(encodeURIComponent)
+          .join("/")}`;
+
+      console.log("URL fotografía:", fotoUrl);
 
       const fotoResponse = await fetch(fotoUrl);
 
@@ -285,11 +375,23 @@ Deno.serve(async (req: Request) => {
 
         fotoTipo =
           fotoResponse.headers.get("content-type") || "";
+
+        console.log(
+          "Fotografía cargada:",
+          fotoTipo,
+          fotoBytes.length,
+          "bytes"
+        );
+      } else {
+        console.error(
+          "No se pudo descargar la fotografía:",
+          await fotoResponse.text()
+        );
       }
     }
 
     // ==========================================
-    // PÁGINA 2 — FOTO
+    // 6. PÁGINA 2 — FOTO
     // ==========================================
 
     const page2 = pdfDoc.addPage([width, height]);
@@ -311,19 +413,49 @@ Deno.serve(async (req: Request) => {
       borderWidth: 2,
     });
 
-    centeredText(
-      page2,
-      "CASA ORUS",
-      755,
-      24,
-      fontBold,
-      dorado
-    );
+    page2.drawRectangle({
+      x: 35,
+      y: 35,
+      width: width - 70,
+      height: height - 70,
+      borderColor: dorado,
+      borderWidth: 0.7,
+    });
+
+    // Logo también en página 2
+    if (logoBytes) {
+      try {
+        const logo = await pdfDoc.embedPng(logoBytes);
+
+        const logoMaxWidth = 150;
+        const logoMaxHeight = 55;
+
+        const escala = Math.min(
+          logoMaxWidth / logo.width,
+          logoMaxHeight / logo.height
+        );
+
+        const logoWidth = logo.width * escala;
+        const logoHeight = logo.height * escala;
+
+        page2.drawImage(logo, {
+          x: (width - logoWidth) / 2,
+          y: 750,
+          width: logoWidth,
+          height: logoHeight,
+        });
+      } catch (error) {
+        console.error(
+          "No se pudo insertar el logo en página 2:",
+          error
+        );
+      }
+    }
 
     centeredText(
       page2,
       "REGISTRO FOTOGRÁFICO DE LA PIEZA",
-      715,
+      710,
       15,
       fontBold,
       gris
@@ -332,11 +464,15 @@ Deno.serve(async (req: Request) => {
     centeredText(
       page2,
       codigo,
-      685,
+      680,
       11,
       fontRegular,
       dorado
     );
+
+    // ==========================================
+    // INSERTAR FOTO
+    // ==========================================
 
     if (fotoBytes) {
       try {
@@ -344,8 +480,15 @@ Deno.serve(async (req: Request) => {
 
         if (fotoTipo.includes("png")) {
           imagen = await pdfDoc.embedPng(fotoBytes);
-        } else {
+        } else if (
+          fotoTipo.includes("jpeg") ||
+          fotoTipo.includes("jpg")
+        ) {
           imagen = await pdfDoc.embedJpg(fotoBytes);
+        } else {
+          throw new Error(
+            `Formato de imagen no compatible: ${fotoTipo}`
+          );
         }
 
         const escala = Math.min(
@@ -362,8 +505,13 @@ Deno.serve(async (req: Request) => {
           width: imagenWidth,
           height: imagenHeight,
         });
+
+        console.log("Fotografía insertada correctamente.");
       } catch (error) {
-        console.error("No se pudo insertar la fotografía:", error);
+        console.error(
+          "No se pudo insertar la fotografía:",
+          error
+        );
 
         centeredText(
           page2,
@@ -413,14 +561,10 @@ Deno.serve(async (req: Request) => {
     );
 
     // ==========================================
-    // 4. CONVERTIR PDF A BYTES
+    // 7. GUARDAR PDF
     // ==========================================
 
     const pdfBytes = await pdfDoc.save();
-
-    // ==========================================
-    // 5. GUARDAR PDF EN STORAGE
-    // ==========================================
 
     const nombrePdf = `certificados/${codigo}.pdf`;
 
@@ -445,7 +589,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ==========================================
-    // 6. URL PÚBLICA DEL PDF
+    // 8. URL PÚBLICA
     // ==========================================
 
     const pdfPublicUrl =
@@ -454,7 +598,7 @@ Deno.serve(async (req: Request) => {
     console.log("PDF generado:", pdfPublicUrl);
 
     // ==========================================
-    // 7. NORMALIZAR TELÉFONO
+    // 9. NORMALIZAR TELÉFONO
     // ==========================================
 
     let telefonoWhatsApp = telefono.replace(/\D/g, "");
@@ -468,7 +612,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ==========================================
-    // 8. ENVIAR DOCUMENTO POR META WHATSAPP
+    // 10. WHATSAPP
     // ==========================================
 
     const whatsappUrl =
@@ -512,7 +656,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ==========================================
-    // 9. RESPUESTA
+    // 11. RESPUESTA
     // ==========================================
 
     return new Response(
@@ -531,9 +675,7 @@ Deno.serve(async (req: Request) => {
         },
       }
     );
-
   } catch (error) {
-
     console.error("ERROR:", error);
 
     return new Response(
